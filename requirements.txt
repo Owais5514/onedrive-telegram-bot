@@ -1,0 +1,6 @@
+python-telegram-bot==20.7
+msgraph-sdk==1.5.4
+azure-identity==1.15.0
+python-dotenv==1.0.0
+asyncio
+aiohttp
