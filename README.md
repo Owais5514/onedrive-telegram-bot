@@ -32,7 +32,7 @@ Before setting up the bot, you need:
 
 3. **Claude AI API (Optional)**
    - Get API key from [Anthropic](https://console.anthropic.com/)
-   - Required for AI file search feature
+   - Required for AI file search feature (uses Claude 3.5 Sonnet)
 
 ## Quick Setup
 

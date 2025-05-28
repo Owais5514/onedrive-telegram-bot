@@ -876,6 +876,8 @@ class OneDriveTelegramBot:
             return "Claude AI is not configured. Please set CLAUDE_API_KEY in environment variables."
         
         try:
+            from anthropic import AsyncAnthropic
+            
             # Prepare context from file results
             files_context = ""
             for i, file_info in enumerate(file_results[:10], 1):  # Limit to top 10 results
@@ -889,36 +891,22 @@ Here are the most relevant files found in the University OneDrive:
 
 Please provide a helpful response about these files, explaining which ones are most relevant to the user's query and why. Keep the response concise and focused on the files found."""
 
-            headers = {
-                'Content-Type': 'application/json',
-                'x-api-key': self.claude_api_key,
-                'anthropic-version': '2023-06-01'
-            }
+            # Initialize Anthropic async client
+            client = AsyncAnthropic(api_key=self.claude_api_key)
             
-            data = {
-                'model': 'claude-3-sonnet-20240229',
-                'max_tokens': 1000,
-                'messages': [
+            # Create message using the official async SDK
+            message = await client.messages.create(
+                model="claude-3-5-sonnet-20241022",
+                max_tokens=1000,
+                messages=[
                     {
-                        'role': 'user',
-                        'content': prompt
+                        "role": "user",
+                        "content": prompt
                     }
                 ]
-            }
+            )
             
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    'https://api.anthropic.com/v1/messages',
-                    headers=headers,
-                    json=data
-                ) as response:
-                    if response.status == 200:
-                        result = await response.json()
-                        return result['content'][0]['text']
-                    else:
-                        error_text = await response.text()
-                        logger.error(f"Claude AI API error {response.status}: {error_text}")
-                        return f"Sorry, there was an error processing your query. Please try again later."
+            return message.content[0].text
                         
         except Exception as e:
             logger.error(f"Error querying Claude AI: {e}")
@@ -1059,7 +1047,7 @@ def main():
         application.add_handler(CommandHandler("start", bot_instance.start))
         application.add_handler(CommandHandler("admin", bot_instance.admin_command))
         application.add_handler(CallbackQueryHandler(bot_instance.handle_callback))
-        application.add_handler(MessageHandler(filters.text & ~filters.command, bot_instance.handle_message))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, bot_instance.handle_message))
         
         print("🚀 Starting bot...")
         print("📱 Send /start to begin using the bot")
