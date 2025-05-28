@@ -1,0 +1,103 @@
+name: OneDrive Telegram Bot Daily Run
+
+on:
+  schedule:
+    # Runs daily at 9:00 AM Bangladesh Time (UTC+6, so 3:00 AM UTC)
+    - cron: '0 3 * * *'
+  workflow_dispatch:  # Allows manual triggering
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 65  # 1 hour + 5 minutes buffer
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+          
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Create environment file
+      run: |
+        echo "Creating .env file with secrets..."
+        cat > .env << EOF
+        # Azure/OneDrive Configuration
+        TENANT_ID=${{ secrets.TENANT_ID }}
+        CLIENT_ID=${{ secrets.CLIENT_ID }}
+        CLIENT_SECRET=${{ secrets.CLIENT_SECRET }}
+        
+        # Telegram Bot Configuration
+        BOT_TOKEN=${{ secrets.BOT_TOKEN }}
+        
+        # Claude AI Configuration
+        CLAUDE_API_KEY=${{ secrets.CLAUDE_API_KEY }}
+        
+        # Optional: Webhook URL (leave empty for polling)
+        WEBHOOK_URL=${{ secrets.WEBHOOK_URL }}
+        EOF
+        
+    - name: Verify environment setup
+      run: |
+        echo "Checking environment variables..."
+        if [ -z "${{ secrets.TENANT_ID }}" ]; then echo "❌ TENANT_ID is missing"; exit 1; fi
+        if [ -z "${{ secrets.CLIENT_ID }}" ]; then echo "❌ CLIENT_ID is missing"; exit 1; fi  
+        if [ -z "${{ secrets.CLIENT_SECRET }}" ]; then echo "❌ CLIENT_SECRET is missing"; exit 1; fi
+        if [ -z "${{ secrets.BOT_TOKEN }}" ]; then echo "❌ BOT_TOKEN is missing"; exit 1; fi
+        if [ -z "${{ secrets.CLAUDE_API_KEY }}" ]; then echo "❌ CLAUDE_API_KEY is missing"; exit 1; fi
+        echo "✅ All required environment variables are set"
+        
+    - name: Run bot for 1 hour
+      run: |
+        echo "🚀 Starting OneDrive Telegram Bot at $(date) (Bangladesh Time: $(TZ='Asia/Dhaka' date))"
+        echo "Bot will run for 1 hour..."
+        
+        # Run the bot in background
+        python bot_continuous.py &
+        BOT_PID=$!
+        
+        echo "📱 Bot started with PID: $BOT_PID"
+        
+        # Wait for 1 hour (3600 seconds)
+        sleep 3600
+        
+        echo "⏰ 1 hour completed. Stopping bot..."
+        kill $BOT_PID 2>/dev/null || echo "Bot already stopped"
+        
+        # Wait a bit for graceful shutdown
+        sleep 10
+        
+        echo "🛑 Bot stopped at $(date) (Bangladesh Time: $(TZ='Asia/Dhaka' date))"
+        
+    - name: Upload bot logs (if any)
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: bot-logs-${{ github.run_number }}
+        path: |
+          *.log
+          *.json
+        retention-days: 7
+        
+    - name: Clean up sensitive files
+      if: always()
+      run: |
+        echo "🧹 Cleaning up sensitive files..."
+        rm -f .env
+        rm -f *.log 2>/dev/null || true
+        echo "✅ Cleanup completed"
