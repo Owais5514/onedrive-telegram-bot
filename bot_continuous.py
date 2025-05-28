@@ -58,6 +58,8 @@ class OneDriveTelegramBot:
         self.unlimited_users = set()  # Users with unlimited access
         self.ephemeral_messages = {}  # Track messages for auto-deletion
         self.file_index = {}  # Index of all files with descriptions
+        self.file_index_path = "file_index.json"  # Path to save file index
+        self.index_timestamp_path = "index_timestamp.txt"  # Track when index was last built
         
     def initialize_authentication(self):
         """Initialize authentication and get access token (synchronous)"""
@@ -804,8 +806,13 @@ class OneDriveTelegramBot:
         self.unlimited_users.discard(user_id)
         logger.info(f"Removed user {user_id} from unlimited access list")
     
-    async def build_file_index(self):
+    async def build_file_index(self, force_rebuild=False):
         """Build an index of all files with their paths and metadata"""
+        # Check if we should use existing index
+        if not force_rebuild and await self.load_file_index():
+            logger.info(f"Loaded existing file index with {len(self.file_index)} files")
+            return
+        
         logger.info("Building file index...")
         self.file_index = {}
         
@@ -830,6 +837,54 @@ class OneDriveTelegramBot:
         
         await index_folder("/")
         logger.info(f"File index built with {len(self.file_index)} files")
+        
+        # Save the index to file
+        await self.save_file_index()
+    
+    async def save_file_index(self):
+        """Save the file index to a JSON file"""
+        try:
+            with open(self.file_index_path, 'w', encoding='utf-8') as f:
+                json.dump(self.file_index, f, ensure_ascii=False, indent=2)
+            
+            # Save timestamp
+            with open(self.index_timestamp_path, 'w') as f:
+                f.write(datetime.now().isoformat())
+            
+            logger.info(f"File index saved to {self.file_index_path}")
+        except Exception as e:
+            logger.error(f"Error saving file index: {e}")
+    
+    async def load_file_index(self):
+        """Load the file index from JSON file if it exists and is recent"""
+        try:
+            # Check if index file exists
+            if not os.path.exists(self.file_index_path):
+                logger.info("No existing file index found")
+                return False
+            
+            # Check if index is recent (less than 24 hours old)
+            if os.path.exists(self.index_timestamp_path):
+                with open(self.index_timestamp_path, 'r') as f:
+                    timestamp_str = f.read().strip()
+                    timestamp = datetime.fromisoformat(timestamp_str)
+                    age = datetime.now() - timestamp
+                    
+                    # If index is older than 24 hours, rebuild it
+                    if age > timedelta(hours=24):
+                        logger.info(f"File index is {age} old, rebuilding...")
+                        return False
+            
+            # Load the index
+            with open(self.file_index_path, 'r', encoding='utf-8') as f:
+                self.file_index = json.load(f)
+            
+            logger.info(f"Loaded file index from {self.file_index_path}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error loading file index: {e}")
+            return False
     
     def generate_file_description(self, filename: str, filepath: str) -> str:
         """Generate a searchable description for a file based on its name and path"""
@@ -990,7 +1045,7 @@ Please provide a helpful response about these files, explaining which ones are m
                 
         elif command == "rebuild_index":
             await update.message.reply_text("🔄 Rebuilding file index...")
-            await self.build_file_index()
+            await self.build_file_index(force_rebuild=True)
             await update.message.reply_text(f"✅ File index rebuilt with {len(self.file_index)} files.")
             
         else:
@@ -1014,9 +1069,9 @@ async def post_init(application: Application) -> None:
         print(f"👤 Default user: {bot_instance.users_cache[bot_instance.default_user_id]['name']}")
         
         # Build file index
-        print("📂 Building file index...")
+        print("📂 Initializing file index...")
         await bot_instance.build_file_index()
-        print("✅ File index built successfully!")
+        print("✅ File index ready!")
     else:
         print("⚠️ OneDrive connection failed - some features may not work")
 
