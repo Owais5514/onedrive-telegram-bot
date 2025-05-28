@@ -47,8 +47,20 @@ async def test_onedrive_access():
                     print(f"✅ Found {len(users)} users")
                     
                     if users:
-                        default_user = users[0]
-                        print(f"👤 Default user: {default_user['displayName']}")
+                        # Try to find Owais Ahmed as default user
+                        owais_user = None
+                        for user in users:
+                            if 'owais ahmed' in user['displayName'].lower():
+                                owais_user = user
+                                break
+                        
+                        if owais_user:
+                            default_user = owais_user
+                            print(f"👤 Default user: {default_user['displayName']} (Found Owais Ahmed)")
+                        else:
+                            default_user = users[0]
+                            print(f"👤 Default user: {default_user['displayName']} (Owais Ahmed not found, using first user)")
+                            
                         user_id = default_user['id']
                         
                         # Test 2: Get OneDrive root

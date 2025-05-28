@@ -74,11 +74,26 @@ class OneDriveTelegramBot:
                                     'email': user['userPrincipalName']
                                 }
                             
-                            self.default_user_id = users[0]['id']
+                            # Try to find "Owais Ahmed" as default user
+                            owais_user = None
+                            for user in users:
+                                if 'owais ahmed' in user['displayName'].lower():
+                                    owais_user = user
+                                    break
+                            
+                            if owais_user:
+                                self.default_user_id = owais_user['id']
+                                default_user_name = owais_user['displayName']
+                            else:
+                                # Fallback to first user if Owais Ahmed not found
+                                self.default_user_id = users[0]['id']
+                                default_user_name = users[0]['displayName']
+                                logger.warning("Owais Ahmed not found, using first user as default")
+                            
                             self.authenticated = True
                             
                             logger.info(f"Authentication successful. Found {len(users)} users.")
-                            logger.info(f"Default user: {users[0]['displayName']}")
+                            logger.info(f"Default user: {default_user_name}")
                             return True
                     else:
                         logger.error(f"Failed to get users: {response.status}")
