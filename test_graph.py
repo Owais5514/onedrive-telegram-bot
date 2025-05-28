@@ -17,9 +17,9 @@ async def test_graph_connection():
     # Load environment variables
     load_dotenv()
     
-    client_id = os.getenv('CLIENT_ID')
-    client_secret = os.getenv('CLIENT_SECRET')
-    tenant_id = os.getenv('TENANT_ID')
+    client_id = os.getenv('AZURE_CLIENT_ID')
+    client_secret = os.getenv('AZURE_CLIENT_SECRET')
+    tenant_id = os.getenv('AZURE_TENANT_ID')
     
     try:
         # Initialize credentials
