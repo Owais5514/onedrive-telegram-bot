@@ -329,42 +329,19 @@ class OneDriveTelegramBot:
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Start command handler"""
-        welcome_message = """*Welcome to University OneDrive Bot!*
-
-This bot gives you access to University files through Telegram.
-
-🔐 *Authentication Status:* ✅ Connected
-👤 *User:* {user}
-📁 *University Files:* {file_count}
-
-*Available Commands:*
-• /start - Show this welcome message
-• Use the buttons below to browse University files
-
-*Features:*
-• 📁 Browse University folders and files
-• 📥 Download files directly to Telegram
-• 🔍 Navigate through University structure
-• 📚 Access to semester materials and resources
-
-*Note:* This bot is restricted to University folder only."""
-        
-        if self.authenticated and self.default_user_id:
-            user_name = self.users_cache[self.default_user_id]['name']
-            # Get University folder items count
-            university_items = await self.get_onedrive_items("/")  # This will default to University folder
-            file_count = len(university_items)
+        if self.authenticated:
+            service_status = "✅ Online"
         else:
-            user_name = "Not connected"
-            file_count = 0
+            service_status = "❌ Offline"
             
-        formatted_message = welcome_message.format(
-            user=user_name,
-            file_count=file_count
-        )
+        welcome_message = f"""*Welcome to University OneDrive Bot!*
+
+📊 *Service Status:* {service_status}
+
+*Choose options from below:*"""
         
         await update.message.reply_text(
-            formatted_message,
+            welcome_message,
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("📁 Browse Files", callback_data="browse:/"),
                 InlineKeyboardButton("🔄 Refresh", callback_data="refresh")
@@ -465,21 +442,7 @@ This bot gives you access to University files through Telegram.
         if total_pages > 1:
             message += f"📄 *Page:* {page + 1}/{total_pages}\n"
         
-        message += "\n"
-        
-        # Show items on current page
-        if page_items:
-            message += "*� Contents:*\n"
-            for item in page_items:
-                if item['is_folder']:
-                    message += f"📁 {item['name']}\n"
-                else:
-                    size_mb = item['size'] / 1024 / 1024
-                    if size_mb > 1:
-                        size_str = f"({size_mb:.1f} MB)"
-                    else:
-                        size_str = f"({item['size']} bytes)"
-                    message += f"📄 {item['name']} {size_str}\n"
+        message += "\n*Use the buttons below to browse items*"
         
         # Create buttons for all items on current page
         buttons = []
