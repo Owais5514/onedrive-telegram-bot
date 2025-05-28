@@ -447,10 +447,21 @@ class OneDriveTelegramBot:
         else:
             await query.edit_message_text("❓ Unknown command")
 
-    async def handle_ai_search(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def handle_ai_search(self, update, context: ContextTypes.DEFAULT_TYPE):
         """Handle AI search queries"""
-        if update.callback_query:
+        # Handle both Update objects (from message handler) and CallbackQuery objects (from callback handler)
+        if hasattr(update, 'callback_query') and update.callback_query:
+            # Called from message handler with Update object
             query = update.callback_query
+        elif hasattr(update, 'from_user') and hasattr(update, 'edit_message_text'):
+            # Called directly with CallbackQuery object from handle_callback
+            query = update
+        else:
+            # This is a text message for AI search
+            query = None
+        
+        if query:
+            # Handle callback query (AI search button clicked)
             await query.answer()
             user_id = query.from_user.id
             
@@ -516,7 +527,12 @@ class OneDriveTelegramBot:
                         await search_msg.edit_text(
                             "❌ *No Files Found*\n\n"
                             f"Query: _{query_text}_\n\n"
-                            "No files matched your search query. Try using different keywords or check if the files exist in the University folder.",
+                            f"No files matched your search query. We searched through {len(self.file_index)} files in the University folder.\n\n"
+                            "*Suggestions:*\n"
+                            "• Try different keywords\n"
+                            "• Check spelling\n"
+                            "• Use broader terms\n"
+                            "• Contact admin if files are missing",
                             parse_mode='Markdown',
                             reply_markup=InlineKeyboardMarkup([[
                                 InlineKeyboardButton("🔙 Try Again", callback_data="ai_search"),
@@ -969,6 +985,10 @@ Please provide a helpful response about these files, explaining which ones are m
     
     def search_files(self, query: str, limit: int = 10) -> List[Dict]:
         """Search files using the indexed descriptions"""
+        if not self.file_index:
+            logger.warning("File index is empty. Please rebuild the index.")
+            return []
+        
         query_words = query.lower().split()
         results = []
         
@@ -996,6 +1016,7 @@ Please provide a helpful response about these files, explaining which ones are m
         
         # Sort by relevance score and return top results
         results.sort(key=lambda x: x['score'], reverse=True)
+        logger.info(f"Search query '{query}' found {len(results)} results, returning top {min(limit, len(results))}")
         return results[:limit]
 
     async def admin_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
