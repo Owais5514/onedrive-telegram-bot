@@ -8,12 +8,15 @@ import logging
 import os
 import asyncio
 import aiohttp
+import json
+import hashlib
+from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from dotenv import load_dotenv
 
 # Telegram imports
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
 # Microsoft Graph imports
 from azure.identity import ClientSecretCredential
@@ -34,6 +37,7 @@ class OneDriveTelegramBot:
         self.client_id = os.getenv('AZURE_CLIENT_ID')
         self.client_secret = os.getenv('AZURE_CLIENT_SECRET')
         self.tenant_id = os.getenv('AZURE_TENANT_ID')
+        self.claude_api_key = os.getenv('CLAUDE_API_KEY')
         
         if not all([self.bot_token, self.client_id, self.client_secret, self.tenant_id]):
             raise ValueError("Missing required environment variables")
@@ -48,6 +52,12 @@ class OneDriveTelegramBot:
         # University folder restriction
         self.base_folder = "University"
         self.restricted_mode = True
+        
+        # New features
+        self.user_query_limits = {}  # Track daily query limits per user
+        self.unlimited_users = set()  # Users with unlimited access
+        self.ephemeral_messages = {}  # Track messages for auto-deletion
+        self.file_index = {}  # Index of all files with descriptions
         
     def initialize_authentication(self):
         """Initialize authentication and get access token (synchronous)"""
@@ -340,19 +350,48 @@ class OneDriveTelegramBot:
 
 *Choose options from below:*"""
         
-        await update.message.reply_text(
-            welcome_message,
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("📁 Browse Files", callback_data="browse:/"),
-                InlineKeyboardButton("🔄 Refresh", callback_data="refresh")
-            ]]),
-            parse_mode='Markdown'
-        )
+        # Check if it's a group chat
+        is_group = update.message.chat.type in ['group', 'supergroup']
+        
+        if is_group:
+            # Send ephemeral message in groups
+            sent_message = await update.message.reply_text(
+                welcome_message,
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("📁 Browse Files", callback_data="browse:/"),
+                    InlineKeyboardButton("🔄 Refresh", callback_data="refresh"),
+                    InlineKeyboardButton("🤖 AI Search", callback_data="ai_search")
+                ]]),
+                parse_mode='Markdown'
+            )
+            
+            # Schedule message for deletion
+            await asyncio.create_task(
+                self.schedule_message_deletion(
+                    sent_message.chat.id, 
+                    sent_message.message_id, 
+                    update.message.from_user.id
+                )
+            )
+        else:
+            # Normal message in private chat
+            await update.message.reply_text(
+                welcome_message,
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("📁 Browse Files", callback_data="browse:/"),
+                    InlineKeyboardButton("🔄 Refresh", callback_data="refresh"),
+                    InlineKeyboardButton("🤖 AI Search", callback_data="ai_search")
+                ]]),
+                parse_mode='Markdown'
+            )
 
     async def handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle button callbacks"""
         query = update.callback_query
         await query.answer()
+        
+        # Update interaction time for ephemeral messages
+        self.update_message_interaction(query.message.chat.id, query.message.message_id)
         
         data = query.data
         
@@ -401,8 +440,178 @@ class OneDriveTelegramBot:
             }, context.bot)
             fake_update.message = query.message
             await self.start(fake_update, context)
+        elif data == "ai_search":
+            await self.handle_ai_search(query, context)
         else:
             await query.edit_message_text("❓ Unknown command")
+
+    async def handle_ai_search(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle AI search queries"""
+        if update.callback_query:
+            query = update.callback_query
+            await query.answer()
+            user_id = query.from_user.id
+            
+            # Check rate limit
+            if not self.check_user_query_limit(user_id):
+                await query.edit_message_text(
+                    "❌ *Daily Limit Reached*\n\n"
+                    "You have reached your daily limit of 1 AI search query.\n"
+                    "Please try again tomorrow or contact an administrator for unlimited access.",
+                    parse_mode='Markdown',
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton("🔙 Back", callback_data="browse:/")
+                    ]])
+                )
+                return
+            
+            await query.edit_message_text(
+                "🤖 *AI Search*\n\n"
+                "Ask me to search for files! I'll use AI to find the most relevant files in your University OneDrive.\n\n"
+                "*Example queries:*\n"
+                "• 'Find my calculus notes'\n"
+                "• 'Show me Python programming files'\n"
+                "• 'Look for semester 1 assignments'\n\n"
+                "💡 *Please type your search query as a message:*",
+                parse_mode='Markdown',
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔙 Back", callback_data="browse:/")
+                ]])
+            )
+            
+            # Set user in AI search mode
+            context.user_data['ai_search_mode'] = True
+            context.user_data['ai_search_message_id'] = query.message.message_id
+        else:
+            # Handle text message for AI search
+            if context.user_data.get('ai_search_mode'):
+                user_id = update.message.from_user.id
+                query_text = update.message.text
+                
+                # Check rate limit again
+                if not self.check_user_query_limit(user_id):
+                    await update.message.reply_text(
+                        "❌ You have exceeded your daily limit. Please try again tomorrow."
+                    )
+                    return
+                
+                # Increment query count
+                self.increment_user_query_count(user_id)
+                
+                # Send "searching" message
+                search_msg = await update.message.reply_text(
+                    "🔍 *Searching files...*\n\n"
+                    f"Query: _{query_text}_\n\n"
+                    "Please wait while I search through the University files and analyze the results with AI...",
+                    parse_mode='Markdown'
+                )
+                
+                try:
+                    # Search files
+                    file_results = self.search_files(query_text)
+                    
+                    if not file_results:
+                        await search_msg.edit_text(
+                            "❌ *No Files Found*\n\n"
+                            f"Query: _{query_text}_\n\n"
+                            "No files matched your search query. Try using different keywords or check if the files exist in the University folder.",
+                            parse_mode='Markdown',
+                            reply_markup=InlineKeyboardMarkup([[
+                                InlineKeyboardButton("🔙 Try Again", callback_data="ai_search"),
+                                InlineKeyboardButton("📁 Browse Files", callback_data="browse:/")
+                            ]])
+                        )
+                        return
+                    
+                    # Query Claude AI
+                    ai_response = await self.query_claude_ai(query_text, file_results)
+                    
+                    # Create response with top files
+                    response_text = f"🤖 *AI Search Results*\n\n"
+                    response_text += f"*Query:* _{query_text}_\n\n"
+                    response_text += f"*AI Analysis:*\n{ai_response}\n\n"
+                    response_text += f"*Top {min(5, len(file_results))} Matching Files:*\n"
+                    
+                    buttons = []
+                    for i, file_info in enumerate(file_results[:5], 1):
+                        response_text += f"{i}. {file_info['name']}\n   📂 {file_info['path']}\n"
+                        
+                        # Create download button
+                        file_hash = str(hash(f"{file_info['path']}_{file_info['name']}"))[-8:]
+                        self.file_cache[file_hash] = {
+                            'name': file_info['name'],
+                            'size': file_info['size'],
+                            'download_url': '',
+                            'path': file_info['folder']
+                        }
+                        buttons.append([InlineKeyboardButton(
+                            f"📄 {file_info['name'][:30]}...", 
+                            callback_data=f"file:{file_hash}"
+                        )])
+                    
+                    # Add navigation buttons
+                    buttons.append([
+                        InlineKeyboardButton("🔙 New Search", callback_data="ai_search"),
+                        InlineKeyboardButton("📁 Browse Files", callback_data="browse:/")
+                    ])
+                    
+                    await search_msg.edit_text(
+                        response_text,
+                        parse_mode='Markdown',
+                        reply_markup=InlineKeyboardMarkup(buttons)
+                    )
+                    
+                    # Schedule deletion if in group
+                    if update.message.chat.type in ['group', 'supergroup']:
+                        await asyncio.create_task(
+                            self.schedule_message_deletion(
+                                search_msg.chat.id, 
+                                search_msg.message_id, 
+                                user_id
+                            )
+                        )
+                    
+                except Exception as e:
+                    logger.error(f"Error in AI search: {e}")
+                    await search_msg.edit_text(
+                        "❌ *Search Error*\n\n"
+                        "Sorry, there was an error processing your search. Please try again later.",
+                        parse_mode='Markdown',
+                        reply_markup=InlineKeyboardMarkup([[
+                            InlineKeyboardButton("🔙 Try Again", callback_data="ai_search"),
+                            InlineKeyboardButton("📁 Browse Files", callback_data="browse:/")
+                        ]])
+                    )
+                
+                # Clear AI search mode
+                context.user_data['ai_search_mode'] = False
+
+    async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle text messages"""
+        # Check if user is in AI search mode
+        if context.user_data.get('ai_search_mode'):
+            await self.handle_ai_search(update, context)
+        else:
+            # Ignore other messages or provide help
+            if update.message.text and not update.message.text.startswith('/'):
+                help_msg = await update.message.reply_text(
+                    "💡 *How to use this bot:*\n\n"
+                    "• Use /start to see the main menu\n"
+                    "• Click 'AI Search' to search files with AI\n"
+                    "• Click 'Browse Files' to navigate folders\n\n"
+                    "Type /start to begin!",
+                    parse_mode='Markdown'
+                )
+                
+                # Schedule deletion if in group
+                if update.message.chat.type in ['group', 'supergroup']:
+                    await asyncio.create_task(
+                        self.schedule_message_deletion(
+                            help_msg.chat.id, 
+                            help_msg.message_id, 
+                            update.message.from_user.id
+                        )
+                    )
 
     async def show_folder_contents(self, query, path: str, page: int = 0):
         """Show contents of a folder with pagination"""
@@ -523,6 +732,282 @@ class OneDriveTelegramBot:
             else:
                 raise e
 
+    async def schedule_message_deletion(self, chat_id: int, message_id: int, user_id: int):
+        """Schedule a message for deletion after 5 minutes of no interaction"""
+        message_key = f"{chat_id}_{message_id}"
+        self.ephemeral_messages[message_key] = {
+            'chat_id': chat_id,
+            'message_id': message_id,
+            'user_id': user_id,
+            'last_interaction': datetime.now(),
+            'scheduled': True
+        }
+        
+        # Schedule deletion after 5 minutes
+        await asyncio.sleep(300)  # 5 minutes
+        
+        # Check if message still needs deletion
+        if message_key in self.ephemeral_messages:
+            current_time = datetime.now()
+            last_interaction = self.ephemeral_messages[message_key]['last_interaction']
+            
+            if (current_time - last_interaction).total_seconds() >= 300:
+                try:
+                    # Delete the message
+                    await self.application.bot.delete_message(chat_id=chat_id, message_id=message_id)
+                    del self.ephemeral_messages[message_key]
+                    logger.info(f"Deleted ephemeral message {message_id} in chat {chat_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete message {message_id}: {e}")
+                    if message_key in self.ephemeral_messages:
+                        del self.ephemeral_messages[message_key]
+    
+    def update_message_interaction(self, chat_id: int, message_id: int):
+        """Update the last interaction time for a message"""
+        message_key = f"{chat_id}_{message_id}"
+        if message_key in self.ephemeral_messages:
+            self.ephemeral_messages[message_key]['last_interaction'] = datetime.now()
+    
+    def check_user_query_limit(self, user_id: int) -> bool:
+        """Check if user has exceeded daily query limit"""
+        if user_id in self.unlimited_users:
+            return True
+            
+        today = datetime.now().date()
+        user_key = f"{user_id}_{today}"
+        
+        if user_key not in self.user_query_limits:
+            self.user_query_limits[user_key] = 0
+            
+        return self.user_query_limits[user_key] < 1
+    
+    def increment_user_query_count(self, user_id: int):
+        """Increment user's daily query count"""
+        if user_id in self.unlimited_users:
+            return
+            
+        today = datetime.now().date()
+        user_key = f"{user_id}_{today}"
+        
+        if user_key not in self.user_query_limits:
+            self.user_query_limits[user_key] = 0
+            
+        self.user_query_limits[user_key] += 1
+    
+    def add_unlimited_user(self, user_id: int):
+        """Add user to unlimited access list"""
+        self.unlimited_users.add(user_id)
+        logger.info(f"Added user {user_id} to unlimited access list")
+    
+    def remove_unlimited_user(self, user_id: int):
+        """Remove user from unlimited access list"""
+        self.unlimited_users.discard(user_id)
+        logger.info(f"Removed user {user_id} from unlimited access list")
+    
+    async def build_file_index(self):
+        """Build an index of all files with their paths and metadata"""
+        logger.info("Building file index...")
+        self.file_index = {}
+        
+        async def index_folder(path: str = "/"):
+            items = await self.get_onedrive_items(path)
+            
+            for item in items:
+                if item['is_folder']:
+                    # Recursively index subfolders
+                    folder_path = f"{path.rstrip('/')}/{item['name']}" if path != "/" else item['name']
+                    await index_folder(folder_path)
+                else:
+                    # Index file
+                    file_path = f"{path.rstrip('/')}/{item['name']}" if path != "/" else item['name']
+                    self.file_index[item['id']] = {
+                        'name': item['name'],
+                        'path': file_path,
+                        'size': item['size'],
+                        'folder': path,
+                        'description': self.generate_file_description(item['name'], file_path)
+                    }
+        
+        await index_folder("/")
+        logger.info(f"File index built with {len(self.file_index)} files")
+    
+    def generate_file_description(self, filename: str, filepath: str) -> str:
+        """Generate a searchable description for a file based on its name and path"""
+        # Extract file extension and folder context
+        file_ext = filename.split('.')[-1].lower() if '.' in filename else ''
+        folder_parts = filepath.split('/')
+        
+        description_parts = [filename.lower()]
+        
+        # Add folder context
+        for part in folder_parts:
+            if part and part.lower() not in description_parts:
+                description_parts.append(part.lower())
+        
+        # Add file type context
+        file_type_map = {
+            'pdf': 'document pdf text book notes',
+            'doc': 'document word text',
+            'docx': 'document word text',
+            'ppt': 'presentation slides powerpoint',
+            'pptx': 'presentation slides powerpoint',
+            'xls': 'spreadsheet excel data',
+            'xlsx': 'spreadsheet excel data',
+            'txt': 'text document notes',
+            'py': 'python code programming script',
+            'js': 'javascript code programming',
+            'html': 'web html code programming',
+            'css': 'stylesheet css web design',
+            'jpg': 'image photo picture',
+            'png': 'image picture graphic',
+            'mp4': 'video movie recording',
+            'mp3': 'audio music sound',
+            'zip': 'archive compressed files'
+        }
+        
+        if file_ext in file_type_map:
+            description_parts.extend(file_type_map[file_ext].split())
+        
+        return ' '.join(description_parts)
+    
+    async def query_claude_ai(self, query: str, file_results: List[Dict]) -> str:
+        """Query Claude AI with file search results"""
+        if not self.claude_api_key:
+            return "Claude AI is not configured. Please set CLAUDE_API_KEY in environment variables."
+        
+        try:
+            # Prepare context from file results
+            files_context = ""
+            for i, file_info in enumerate(file_results[:10], 1):  # Limit to top 10 results
+                files_context += f"{i}. {file_info['name']} (Path: {file_info['path']})\n"
+            
+            prompt = f"""Based on the user's query: "{query}"
+
+Here are the most relevant files found in the University OneDrive:
+
+{files_context}
+
+Please provide a helpful response about these files, explaining which ones are most relevant to the user's query and why. Keep the response concise and focused on the files found."""
+
+            headers = {
+                'Content-Type': 'application/json',
+                'x-api-key': self.claude_api_key,
+                'anthropic-version': '2023-06-01'
+            }
+            
+            data = {
+                'model': 'claude-3-sonnet-20240229',
+                'max_tokens': 1000,
+                'messages': [
+                    {
+                        'role': 'user',
+                        'content': prompt
+                    }
+                ]
+            }
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    'https://api.anthropic.com/v1/messages',
+                    headers=headers,
+                    json=data
+                ) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        return result['content'][0]['text']
+                    else:
+                        error_text = await response.text()
+                        logger.error(f"Claude AI API error {response.status}: {error_text}")
+                        return f"Sorry, there was an error processing your query. Please try again later."
+                        
+        except Exception as e:
+            logger.error(f"Error querying Claude AI: {e}")
+            return "Sorry, there was an error processing your query. Please try again later."
+    
+    def search_files(self, query: str, limit: int = 10) -> List[Dict]:
+        """Search files using the indexed descriptions"""
+        query_words = query.lower().split()
+        results = []
+        
+        for file_id, file_info in self.file_index.items():
+            score = 0
+            description = file_info['description']
+            
+            # Calculate relevance score
+            for word in query_words:
+                if word in description:
+                    score += description.count(word)
+                    # Boost score if word appears in filename
+                    if word in file_info['name'].lower():
+                        score += 5
+                    # Boost score if word appears in immediate folder
+                    if word in file_info['folder'].lower():
+                        score += 2
+            
+            if score > 0:
+                results.append({
+                    'score': score,
+                    'file_id': file_id,
+                    **file_info
+                })
+        
+        # Sort by relevance score and return top results
+        results.sort(key=lambda x: x['score'], reverse=True)
+        return results[:limit]
+
+    async def admin_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Admin command to manage unlimited users"""
+        # Simple admin check - you can enhance this with proper admin user IDs
+        admin_users = [123456789]  # Replace with actual admin user IDs
+        
+        if update.message.from_user.id not in admin_users:
+            await update.message.reply_text("❌ You don't have permission to use this command.")
+            return
+        
+        if not context.args:
+            await update.message.reply_text(
+                "*Admin Commands:*\n\n"
+                "`/admin add_unlimited <user_id>` - Add unlimited access\n"
+                "`/admin remove_unlimited <user_id>` - Remove unlimited access\n"
+                "`/admin list_unlimited` - List unlimited users\n"
+                "`/admin rebuild_index` - Rebuild file index",
+                parse_mode='Markdown'
+            )
+            return
+        
+        command = context.args[0].lower()
+        
+        if command == "add_unlimited" and len(context.args) > 1:
+            try:
+                user_id = int(context.args[1])
+                self.add_unlimited_user(user_id)
+                await update.message.reply_text(f"✅ Added user {user_id} to unlimited access list.")
+            except ValueError:
+                await update.message.reply_text("❌ Invalid user ID.")
+                
+        elif command == "remove_unlimited" and len(context.args) > 1:
+            try:
+                user_id = int(context.args[1])
+                self.remove_unlimited_user(user_id)
+                await update.message.reply_text(f"✅ Removed user {user_id} from unlimited access list.")
+            except ValueError:
+                await update.message.reply_text("❌ Invalid user ID.")
+                
+        elif command == "list_unlimited":
+            if self.unlimited_users:
+                users_list = "\n".join([f"• {user_id}" for user_id in self.unlimited_users])
+                await update.message.reply_text(f"*Unlimited Access Users:*\n\n{users_list}", parse_mode='Markdown')
+            else:
+                await update.message.reply_text("No users have unlimited access.")
+                
+        elif command == "rebuild_index":
+            await update.message.reply_text("🔄 Rebuilding file index...")
+            await self.build_file_index()
+            await update.message.reply_text(f"✅ File index rebuilt with {len(self.file_index)} files.")
+            
+        else:
+            await update.message.reply_text("❌ Unknown admin command.")
+
 # Global bot instance
 bot_instance = None
 
@@ -531,11 +1016,19 @@ async def post_init(application: Application) -> None:
     global bot_instance
     logger.info("Starting post-initialization...")
     
+    # Store application reference for message deletion
+    bot_instance.application = application
+    
     # Test authentication and cache users
     success = await bot_instance.test_and_cache_users()
     if success:
         print("✅ OneDrive connected successfully!")
         print(f"👤 Default user: {bot_instance.users_cache[bot_instance.default_user_id]['name']}")
+        
+        # Build file index
+        print("📂 Building file index...")
+        await bot_instance.build_file_index()
+        print("✅ File index built successfully!")
     else:
         print("⚠️ OneDrive connection failed - some features may not work")
 
@@ -564,7 +1057,9 @@ def main():
         
         # Add handlers
         application.add_handler(CommandHandler("start", bot_instance.start))
+        application.add_handler(CommandHandler("admin", bot_instance.admin_command))
         application.add_handler(CallbackQueryHandler(bot_instance.handle_callback))
+        application.add_handler(MessageHandler(filters.text & ~filters.command, bot_instance.handle_message))
         
         print("🚀 Starting bot...")
         print("📱 Send /start to begin using the bot")

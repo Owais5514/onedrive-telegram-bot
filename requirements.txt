@@ -4,3 +4,4 @@ azure-identity==1.15.0
 python-dotenv==1.0.0
 asyncio
 aiohttp
+anthropic==0.31.2

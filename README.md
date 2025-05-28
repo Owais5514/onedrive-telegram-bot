@@ -11,6 +11,11 @@ A Python Telegram bot that allows users to browse OneDrive files and folders dir
 - 🔒 Secure authentication using Microsoft Graph API
 - 🎯 Configurable folder restrictions (default: University folder only)
 - 👥 Multi-user support with automatic user selection
+- 🤖 **AI-powered file search** using Claude AI
+- 🔄 **Smart rate limiting** (1 query per day for regular users)
+- 👑 **Unlimited access** management for premium users
+- 💬 **Group chat support** with ephemeral messages
+- ⏰ **Auto-deletion** of bot messages in groups (5 minutes after last interaction)
 
 ## Prerequisites
 
@@ -24,6 +29,10 @@ Before setting up the bot, you need:
    - Go to [Azure Portal](https://portal.azure.com)
    - Create an app registration with Application permissions
    - Note down: Client ID, Client Secret, and Tenant ID
+
+3. **Claude AI API (Optional)**
+   - Get API key from [Anthropic](https://console.anthropic.com/)
+   - Required for AI file search feature
 
 ## Quick Setup
 
@@ -46,6 +55,9 @@ Before setting up the bot, you need:
    AZURE_CLIENT_ID=your_azure_client_id_here
    AZURE_CLIENT_SECRET=your_azure_client_secret_here
    AZURE_TENANT_ID=your_azure_tenant_id_here
+   
+   # Claude AI API (Optional - for AI file search)
+   CLAUDE_API_KEY=your_claude_api_key_here
    ```
 
 4. **Run the bot:**
@@ -66,7 +78,21 @@ Make sure to **Grant admin consent** for these permissions in the Azure portal.
 1. Start a chat with your bot on Telegram
 2. Send `/start` to begin browsing OneDrive
 3. Use the inline buttons to navigate folders and download files
-4. The bot is restricted to the "University" folder by default for security
+4. Click "🤖 AI Search" to search files using natural language
+5. In groups, bot messages will auto-delete after 5 minutes of inactivity
+6. Regular users get 1 AI search per day; admins can grant unlimited access
+
+### AI Search Examples
+- "Find my calculus notes"
+- "Show me Python programming files"
+- "Look for semester 1 assignments"
+- "Search for presentation slides"
+
+### Admin Commands
+- `/admin add_unlimited <user_id>` - Grant unlimited AI searches
+- `/admin remove_unlimited <user_id>` - Remove unlimited access
+- `/admin list_unlimited` - List users with unlimited access
+- `/admin rebuild_index` - Rebuild the file search index
 
 ## Configuration
 
@@ -101,6 +127,7 @@ If you encounter issues:
 - `python-dotenv==1.0.0` - Environment variable management
 - `asyncio` - Asynchronous programming support
 - `aiohttp` - HTTP client for async operations
+- `anthropic==0.31.2` - Claude AI API client (optional)
 
 ## Security Notes
 
