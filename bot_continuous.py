@@ -60,6 +60,11 @@ class OneDriveTelegramBot:
         self.file_index = {}  # Index of all files with descriptions
         self.file_index_path = "file_index.json"  # Path to save file index
         self.index_timestamp_path = "index_timestamp.txt"  # Track when index was last built
+        self.user_queries_path = "user_queries.json"  # Persistent user query tracking
+        self.unlimited_users_path = "unlimited_users.json"  # Persistent unlimited users
+        
+        # Load persistent user data
+        self.load_user_data()
         
     def initialize_authentication(self):
         """Initialize authentication and get access token (synchronous)"""
@@ -820,17 +825,74 @@ class OneDriveTelegramBot:
             self.user_query_limits[user_key] = 0
             
         self.user_query_limits[user_key] += 1
+        
+        # Save to persistent storage
+        self.save_user_data()
+        logger.info(f"User {user_id} query count: {self.user_query_limits[user_key]}/1")
     
     def add_unlimited_user(self, user_id: int):
         """Add user to unlimited access list"""
         self.unlimited_users.add(user_id)
+        self.save_user_data()  # Save to persistent storage
         logger.info(f"Added user {user_id} to unlimited access list")
     
     def remove_unlimited_user(self, user_id: int):
         """Remove user from unlimited access list"""
         self.unlimited_users.discard(user_id)
+        self.save_user_data()  # Save to persistent storage
         logger.info(f"Removed user {user_id} from unlimited access list")
     
+    def load_user_data(self):
+        """Load user query limits and unlimited users from persistent storage"""
+        try:
+            # Load user query limits
+            if os.path.exists(self.user_queries_path):
+                with open(self.user_queries_path, 'r') as f:
+                    data = json.load(f)
+                    # Clean old entries (older than 7 days)
+                    current_date = datetime.now().date()
+                    cleaned_data = {}
+                    for key, count in data.items():
+                        try:
+                            # Extract date from key format: user_id_YYYY-MM-DD
+                            date_str = key.split('_')[-1]
+                            entry_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+                            days_diff = (current_date - entry_date).days
+                            if days_diff <= 7:  # Keep entries from last 7 days
+                                cleaned_data[key] = count
+                        except (ValueError, IndexError):
+                            # Skip malformed entries
+                            continue
+                    self.user_query_limits = cleaned_data
+                    logger.info(f"Loaded {len(self.user_query_limits)} user query records")
+            
+            # Load unlimited users
+            if os.path.exists(self.unlimited_users_path):
+                with open(self.unlimited_users_path, 'r') as f:
+                    unlimited_list = json.load(f)
+                    self.unlimited_users = set(unlimited_list)
+                    logger.info(f"Loaded {len(self.unlimited_users)} unlimited users")
+                    
+        except Exception as e:
+            logger.error(f"Error loading user data: {e}")
+            self.user_query_limits = {}
+            self.unlimited_users = set()
+    
+    def save_user_data(self):
+        """Save user query limits and unlimited users to persistent storage"""
+        try:
+            # Save user query limits
+            with open(self.user_queries_path, 'w') as f:
+                json.dump(self.user_query_limits, f, indent=2)
+            
+            # Save unlimited users
+            with open(self.unlimited_users_path, 'w') as f:
+                json.dump(list(self.unlimited_users), f, indent=2)
+                
+            logger.debug("User data saved to persistent storage")
+        except Exception as e:
+            logger.error(f"Error saving user data: {e}")
+
     async def build_file_index(self, force_rebuild=False):
         """Build an index of all files with their paths and metadata"""
         # Check if we should use existing index
@@ -993,7 +1055,7 @@ Please provide a helpful response about these files, explaining which ones are m
             return "Sorry, there was an error processing your query. Please try again later."
     
     def search_files(self, query: str, limit: int = 10) -> List[Dict]:
-        """Search files using the indexed descriptions"""
+        """Search files using the indexed descriptions with enhanced scoring"""
         if not self.file_index:
             logger.warning("File index is empty. Please rebuild the index.")
             return []
@@ -1003,29 +1065,74 @@ Please provide a helpful response about these files, explaining which ones are m
         
         for file_id, file_info in self.file_index.items():
             score = 0
-            description = file_info['description']
+            description = file_info['description'].lower()
+            filename = file_info['name'].lower()
+            folder_path = file_info['folder'].lower()
             
-            # Calculate relevance score
+            # Calculate relevance score with improved algorithm
             for word in query_words:
-                if word in description:
-                    score += description.count(word)
-                    # Boost score if word appears in filename
-                    if word in file_info['name'].lower():
-                        score += 5
-                    # Boost score if word appears in immediate folder
-                    if word in file_info['folder'].lower():
-                        score += 2
+                word = word.strip()
+                if not word:
+                    continue
+                    
+                # Base score for word found in description
+                word_count_in_desc = description.count(word)
+                if word_count_in_desc > 0:
+                    score += word_count_in_desc
+                    
+                    # Higher scores for exact matches in filename (most important)
+                    if word in filename:
+                        score += 10
+                    
+                    # Medium score for word in folder path
+                    if word in folder_path:
+                        score += 3
+                    
+                    # Bonus for word appearing at start of filename
+                    if filename.startswith(word):
+                        score += 15
+                    
+                    # Bonus for exact filename match (without extension)
+                    filename_without_ext = os.path.splitext(filename)[0]
+                    if word == filename_without_ext or query.lower() == filename_without_ext:
+                        score += 20
+                    
+                    # Bonus for multiple word matches in same file
+                    total_query_words_in_file = sum(1 for q_word in query_words if q_word.strip() in description)
+                    if total_query_words_in_file > 1:
+                        score += (total_query_words_in_file - 1) * 2
             
+            # Additional scoring factors
             if score > 0:
+                # Bonus for common file types that are likely to be important
+                file_ext = os.path.splitext(filename)[1].lower()
+                if file_ext in ['.pdf', '.docx', '.doc', '.txt', '.md']:
+                    score += 1
+                elif file_ext in ['.py', '.cpp', '.java', '.js', '.html']:
+                    score += 1
+                
+                # Small penalty for very long folder paths (likely buried deeper)
+                folder_depth = folder_path.count('/')
+                if folder_depth > 3:
+                    score -= (folder_depth - 3) * 0.5
+                
                 results.append({
                     'score': score,
                     'file_id': file_id,
                     **file_info
                 })
         
-        # Sort by relevance score and return top results
+        # Sort by relevance score (highest first) and return top results
         results.sort(key=lambda x: x['score'], reverse=True)
-        logger.info(f"Search query '{query}' found {len(results)} results, returning top {min(limit, len(results))}")
+        
+        # Log search statistics
+        if results:
+            top_score = results[0]['score']
+            avg_score = sum(r['score'] for r in results) / len(results)
+            logger.info(f"Search '{query}' found {len(results)} results. Top score: {top_score:.1f}, Avg: {avg_score:.1f}")
+        else:
+            logger.info(f"Search '{query}' found no results")
+            
         return results[:limit]
 
     async def admin_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
