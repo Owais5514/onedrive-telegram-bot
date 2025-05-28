@@ -15,7 +15,7 @@ from typing import Optional, List, Dict, Any
 from dotenv import load_dotenv
 
 # Telegram imports
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
 # Microsoft Graph imports
@@ -228,10 +228,11 @@ class OneDriveTelegramBot:
                     f"📊 *Telegram limit:* {max_size_mb} MB\n\n" +
                     "💡 Try accessing smaller files or use OneDrive web interface for large files.",
                     parse_mode='Markdown',
-                    reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton("🔙 Back", callback_data=f"browse:{path}"),
-                        InlineKeyboardButton("🏠 Home", callback_data="browse:/")
-                    ]])
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🤖 AI Search", callback_data="ai_search")],
+                        [InlineKeyboardButton("🔙 Back", callback_data=f"browse:{path}"),
+                         InlineKeyboardButton("🏠 Home", callback_data="browse:/")]
+                    ])
                 )
                 return
             
@@ -262,10 +263,11 @@ class OneDriveTelegramBot:
                             "❌ *Error:* Cannot get download URL\n" +
                             "This file cannot be downloaded directly.",
                             parse_mode='Markdown',
-                            reply_markup=InlineKeyboardMarkup([[
-                                InlineKeyboardButton("🔙 Back", callback_data=f"browse:{path}"),
-                                InlineKeyboardButton("🏠 Home", callback_data="browse:/")
-                            ]])
+                            reply_markup=InlineKeyboardMarkup([
+                                [InlineKeyboardButton("🤖 AI Search", callback_data="ai_search")],
+                                [InlineKeyboardButton("🔙 Back", callback_data=f"browse:{path}"),
+                                 InlineKeyboardButton("🏠 Home", callback_data="browse:/")]
+                            ])
                         )
                         return
                 except Exception as e:
@@ -275,10 +277,11 @@ class OneDriveTelegramBot:
                         "❌ *Error:* Cannot access file\n" +
                         "Please try again later.",
                         parse_mode='Markdown',
-                        reply_markup=InlineKeyboardMarkup([[
-                            InlineKeyboardButton("🔙 Back", callback_data=f"browse:{path}"),
-                            InlineKeyboardButton("🏠 Home", callback_data="browse:/")
-                        ]])
+                        reply_markup=InlineKeyboardMarkup([
+                            [InlineKeyboardButton("🤖 AI Search", callback_data="ai_search")],
+                            [InlineKeyboardButton("🔙 Back", callback_data=f"browse:{path}"),
+                             InlineKeyboardButton("🏠 Home", callback_data="browse:/")]
+                        ])
                     )
                     return
             
@@ -309,10 +312,11 @@ class OneDriveTelegramBot:
                             f"✅ *Downloaded successfully!*\n" +
                             f"📊 *Size:* {file_size_mb:.1f} MB",
                             parse_mode='Markdown',
-                            reply_markup=InlineKeyboardMarkup([[
-                                InlineKeyboardButton("🔙 Back", callback_data=f"browse:{path}"),
-                                InlineKeyboardButton("🏠 Home", callback_data="browse:/")
-                            ]])
+                            reply_markup=InlineKeyboardMarkup([
+                                [InlineKeyboardButton("🤖 AI Search", callback_data="ai_search")],
+                                [InlineKeyboardButton("🔙 Back", callback_data=f"browse:{path}"),
+                                 InlineKeyboardButton("🏠 Home", callback_data="browse:/")]
+                            ])
                         )
                     else:
                         await query.edit_message_text(
@@ -320,10 +324,11 @@ class OneDriveTelegramBot:
                             f"❌ *Download failed*\n" +
                             f"Server returned status: {response.status}",
                             parse_mode='Markdown',
-                            reply_markup=InlineKeyboardMarkup([[
-                                InlineKeyboardButton("🔙 Back", callback_data=f"browse:{path}"),
-                                InlineKeyboardButton("🏠 Home", callback_data="browse:/")
-                            ]])
+                            reply_markup=InlineKeyboardMarkup([
+                                [InlineKeyboardButton("🤖 AI Search", callback_data="ai_search")],
+                                [InlineKeyboardButton("🔙 Back", callback_data=f"browse:{path}"),
+                                 InlineKeyboardButton("🏠 Home", callback_data="browse:/")]
+                            ])
                         )
         
         except Exception as e:
@@ -333,10 +338,11 @@ class OneDriveTelegramBot:
                 f"❌ *Error:* {str(e)[:100]}...\n\n" +
                 "Please try again or contact administrator.",
                 parse_mode='Markdown',
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("🔙 Back", callback_data=f"browse:{path}"),
-                    InlineKeyboardButton("🏠 Home", callback_data="browse:/")
-                ]])
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🤖 AI Search", callback_data="ai_search")],
+                    [InlineKeyboardButton("🔙 Back", callback_data=f"browse:{path}"),
+                     InlineKeyboardButton("🏠 Home", callback_data="browse:/")]
+                ])
             )
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -359,11 +365,11 @@ class OneDriveTelegramBot:
             # Send ephemeral message in groups
             sent_message = await update.message.reply_text(
                 welcome_message,
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("📁 Browse Files", callback_data="browse:/"),
-                    InlineKeyboardButton("🔄 Refresh", callback_data="refresh"),
-                    InlineKeyboardButton("🤖 AI Search", callback_data="ai_search")
-                ]]),
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🤖 AI Search", callback_data="ai_search")],
+                    [InlineKeyboardButton("� Browse Files", callback_data="browse:/"),
+                     InlineKeyboardButton("🔄 Refresh", callback_data="refresh")]
+                ]),
                 parse_mode='Markdown'
             )
             
@@ -379,11 +385,11 @@ class OneDriveTelegramBot:
             # Normal message in private chat
             await update.message.reply_text(
                 welcome_message,
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("📁 Browse Files", callback_data="browse:/"),
-                    InlineKeyboardButton("🔄 Refresh", callback_data="refresh"),
-                    InlineKeyboardButton("🤖 AI Search", callback_data="ai_search")
-                ]]),
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🤖 AI Search", callback_data="ai_search")],
+                    [InlineKeyboardButton("� Browse Files", callback_data="browse:/"),
+                     InlineKeyboardButton("🔄 Refresh", callback_data="refresh")]
+                ]),
                 parse_mode='Markdown'
             )
 
@@ -423,10 +429,11 @@ class OneDriveTelegramBot:
             else:
                 await query.edit_message_text(
                     "❌ File information not found. Please navigate back and try again.",
-                    reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton("🔙 Back", callback_data="browse:/"),
-                        InlineKeyboardButton("🏠 Home", callback_data="browse:/")
-                    ]])
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🤖 AI Search", callback_data="ai_search")],
+                        [InlineKeyboardButton("🔙 Back", callback_data="browse:/"),
+                         InlineKeyboardButton("🏠 Home", callback_data="browse:/")]
+                    ])
                 )
         elif data == "refresh":
             # Create a fake update for the start command
@@ -472,9 +479,10 @@ class OneDriveTelegramBot:
                     "You have reached your daily limit of 1 AI search query.\n"
                     "Please try again tomorrow or contact an administrator for unlimited access.",
                     parse_mode='Markdown',
-                    reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton("🔙 Back", callback_data="browse:/")
-                    ]])
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("� Browse Files", callback_data="browse:/"),
+                         InlineKeyboardButton("🏠 Home", callback_data="browse:/")]
+                    ])
                 )
                 return
             
@@ -487,9 +495,10 @@ class OneDriveTelegramBot:
                 "• 'Look for semester 1 assignments'\n\n"
                 "💡 *Please type your search query as a message:*",
                 parse_mode='Markdown',
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("🔙 Back", callback_data="browse:/")
-                ]])
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("� Browse Files", callback_data="browse:/"),
+                     InlineKeyboardButton("🏠 Home", callback_data="browse:/")]
+                ])
             )
             
             # Set user in AI search mode
@@ -1022,7 +1031,7 @@ Please provide a helpful response about these files, explaining which ones are m
     async def admin_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Admin command to manage unlimited users"""
         # Simple admin check - you can enhance this with proper admin user IDs
-        admin_users = [123456789]  # Replace with actual admin user IDs
+        admin_users = [5759568708]  # Replace with actual admin user IDs
         
         if update.message.from_user.id not in admin_users:
             await update.message.reply_text("❌ You don't have permission to use this command.")
@@ -1072,6 +1081,91 @@ Please provide a helpful response about these files, explaining which ones are m
         else:
             await update.message.reply_text("❌ Unknown admin command.")
 
+    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /help command"""
+        help_text = (
+            "🤖 *OneDrive Telegram Bot Help*\n\n"
+            "*Available Commands:*\n"
+            "• `/start` - Show main menu\n"
+            "• `/ai_search` - Start AI-powered file search\n"
+            "• `/help` - Show this help message\n\n"
+            "*Features:*\n"
+            "📁 Browse files and folders in University OneDrive\n"
+            "🤖 AI-powered intelligent file search\n"
+            "⬇️ Download files directly to Telegram\n"
+            "🔍 Search through 15,000+ files instantly\n\n"
+            "*Usage Tips:*\n"
+            "• Click 'AI Search' for intelligent file finding\n"
+            "• Use specific keywords for better results\n"
+            "• Browse folders to find files manually\n"
+            "• Download files by clicking on them\n\n"
+            "💡 Each user gets 1 AI search per day"
+        )
+        
+        if update.message.chat.type in ['group', 'supergroup']:
+            # In group, send with deletion schedule
+            sent_message = await update.message.reply_text(
+                help_text,
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🤖 AI Search", callback_data="ai_search")],
+                    [InlineKeyboardButton("📁 Browse Files", callback_data="browse:/"),
+                     InlineKeyboardButton("🏠 Home", callback_data="browse:/")]
+                ]),
+                parse_mode='Markdown'
+            )
+            
+            # Schedule message for deletion
+            await asyncio.create_task(
+                self.schedule_message_deletion(
+                    sent_message.chat.id, 
+                    sent_message.message_id, 
+                    update.message.from_user.id
+                )
+            )
+        else:
+            # Normal message in private chat
+            await update.message.reply_text(
+                help_text,
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🤖 AI Search", callback_data="ai_search")],
+                    [InlineKeyboardButton("📁 Browse Files", callback_data="browse:/"),
+                     InlineKeyboardButton("🏠 Home", callback_data="browse:/")]
+                ]),
+                parse_mode='Markdown'
+            )
+
+    async def ai_search_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /ai_search command"""
+        # Create a fake callback query to reuse existing ai_search logic
+        class FakeCallbackQuery:
+            def __init__(self, user, message):
+                self.from_user = user
+                self.message = message
+                
+            async def answer(self):
+                pass
+                
+            async def edit_message_text(self, text, parse_mode=None, reply_markup=None):
+                if update.message.chat.type in ['group', 'supergroup']:
+                    # In group, send with deletion schedule
+                    sent_message = await update.message.reply_text(
+                        text, parse_mode=parse_mode, reply_markup=reply_markup
+                    )
+                    await asyncio.create_task(
+                        self.schedule_message_deletion(
+                            sent_message.chat.id, 
+                            sent_message.message_id, 
+                            update.message.from_user.id
+                        )
+                    )
+                else:
+                    await update.message.reply_text(
+                        text, parse_mode=parse_mode, reply_markup=reply_markup
+                    )
+        
+        fake_query = FakeCallbackQuery(update.message.from_user, update.message)
+        await self.handle_ai_search(fake_query, context)
+
 # Global bot instance
 bot_instance = None
 
@@ -1082,6 +1176,15 @@ async def post_init(application: Application) -> None:
     
     # Store application reference for message deletion
     bot_instance.application = application
+    
+    # Set bot commands menu
+    commands = [
+        BotCommand("start", "Show main menu"),
+        BotCommand("ai_search", "AI-powered file search"),
+        BotCommand("help", "Show help and usage instructions")
+    ]
+    await application.bot.set_my_commands(commands)
+    print("📋 Bot commands menu configured")
     
     # Test authentication and cache users
     success = await bot_instance.test_and_cache_users()
@@ -1124,6 +1227,8 @@ def main():
         application.add_handler(CommandHandler("admin", bot_instance.admin_command))
         application.add_handler(CallbackQueryHandler(bot_instance.handle_callback))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, bot_instance.handle_message))
+        application.add_handler(CommandHandler("help", bot_instance.help_command))
+        application.add_handler(CommandHandler("ai_search", bot_instance.ai_search_command))
         
         print("🚀 Starting bot...")
         print("📱 Send /start to begin using the bot")
