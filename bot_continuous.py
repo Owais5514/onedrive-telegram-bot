@@ -896,6 +896,11 @@ class OneDriveTelegramBot:
     
     def add_unlimited_user(self, user_id: int):
         """Add user to unlimited access list"""
+        # Check if user is already in the list
+        if user_id in self.unlimited_users:
+            logger.info(f"User {user_id} is already in unlimited access list")
+            return
+            
         self.unlimited_users.add(user_id)
         self.save_user_data()  # Save to persistent storage
         logger.info(f"Added user {user_id} to unlimited access list")
@@ -903,6 +908,11 @@ class OneDriveTelegramBot:
     
     def remove_unlimited_user(self, user_id: int):
         """Remove user from unlimited access list"""
+        # Check if user is in the list
+        if user_id not in self.unlimited_users:
+            logger.info(f"User {user_id} is not in unlimited access list")
+            return
+            
         self.unlimited_users.discard(user_id)
         self.save_user_data()  # Save to persistent storage
         logger.info(f"Removed user {user_id} from unlimited access list")
@@ -920,10 +930,24 @@ class OneDriveTelegramBot:
             except Exception as config_e:
                 logger.warning(f"Could not configure git identity: {config_e}")
             
+            # Check if unlimited_users.json has any changes before committing
+            status_result = subprocess.run(["git", "status", "--porcelain", "unlimited_users.json"], 
+                                         capture_output=True, text=True, check=True)
+            
+            if not status_result.stdout.strip():
+                logger.info("No changes detected in unlimited_users.json, skipping commit")
+                return
+            
+            logger.info(f"Changes detected in unlimited_users.json: {status_result.stdout.strip()}")
+            
             subprocess.run(["git", "add", "unlimited_users.json"], check=True)
             subprocess.run(["git", "commit", "-m", f"{action_desc}"], check=True)
             subprocess.run(["git", "push"], check=True)
             logger.info("Committed and pushed unlimited_users.json update to GitHub.")
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Git command failed: {e}")
+            logger.error(f"Command output: {e.stdout if hasattr(e, 'stdout') else 'N/A'}")
+            logger.error(f"Command error: {e.stderr if hasattr(e, 'stderr') else 'N/A'}")
         except Exception as e:
             logger.error(f"Git commit/push failed: {e}")
     
