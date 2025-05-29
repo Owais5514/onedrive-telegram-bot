@@ -85,7 +85,7 @@ jobs:
         echo "🛑 Bot stopped at $(date) (Bangladesh Time: $(TZ='Asia/Dhaka' date))"
         
     - name: Upload bot logs (if any)
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: always()
       with:
         name: bot-logs-${{ github.run_number }}
