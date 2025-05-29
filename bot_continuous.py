@@ -11,6 +11,8 @@ import aiohttp
 import json
 import hashlib
 import time
+import subprocess
+import sys
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from dotenv import load_dotenv
@@ -50,6 +52,7 @@ class OneDriveTelegramBot:
         self.file_cache = {}  # Cache for file download info
         self.default_user_id = None
         self.authenticated = False
+        self.exit_signal = False  # Flag to signal bot shutdown
         
         # Performance optimizations
         self.session = None  # Reuse HTTP session with connection pooling
@@ -895,12 +898,23 @@ class OneDriveTelegramBot:
         self.unlimited_users.add(user_id)
         self.save_user_data()  # Save to persistent storage
         logger.info(f"Added user {user_id} to unlimited access list")
+        self.commit_and_push_unlimited_users_update(f"Add unlimited user {user_id}")
     
     def remove_unlimited_user(self, user_id: int):
         """Remove user from unlimited access list"""
         self.unlimited_users.discard(user_id)
         self.save_user_data()  # Save to persistent storage
         logger.info(f"Removed user {user_id} from unlimited access list")
+        self.commit_and_push_unlimited_users_update(f"Remove unlimited user {user_id}")
+    def commit_and_push_unlimited_users_update(self, action_desc: str):
+        """Commit and push unlimited_users.json to GitHub repo."""
+        try:
+            subprocess.run(["git", "add", "unlimited_users.json"], check=True)
+            subprocess.run(["git", "commit", "-m", f"{action_desc}"], check=True)
+            subprocess.run(["git", "push"], check=True)
+            logger.info("Committed and pushed unlimited_users.json update to GitHub.")
+        except Exception as e:
+            logger.error(f"Git commit/push failed: {e}")
     
     def load_user_data(self):
         """Load user query limits and unlimited users from persistent storage"""
@@ -1178,7 +1192,6 @@ Please provide a helpful response about these files, explaining which ones are m
                     total_query_words_in_file = sum(1 for q_word in query_words if q_word.strip() in description)
                     if total_query_words_in_file > 1:
                         score += (total_query_words_in_file - 1) * 2
-            
             # Additional scoring factors
             if score > 0:
                 # Bonus for common file types that are likely to be important
@@ -1213,7 +1226,7 @@ Please provide a helpful response about these files, explaining which ones are m
         return results[:limit]
 
     async def admin_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Admin command to manage unlimited users"""
+        """Admin command to manage unlimited users and bot control"""
         # Simple admin check - you can enhance this with proper admin user IDs
         admin_users = [5759568708]  # Replace with actual admin user IDs
         
@@ -1227,7 +1240,8 @@ Please provide a helpful response about these files, explaining which ones are m
                 "`/admin add_unlimited <user_id>` - Add unlimited access\n"
                 "`/admin remove_unlimited <user_id>` - Remove unlimited access\n"
                 "`/admin list_unlimited` - List unlimited users\n"
-                "`/admin rebuild_index` - Rebuild file index",
+                "`/admin rebuild_index` - Rebuild file index\n"
+                "`/admin shutdown` - Shut down the bot",
                 parse_mode='Markdown'
             )
             return
@@ -1261,7 +1275,16 @@ Please provide a helpful response about these files, explaining which ones are m
             await update.message.reply_text("🔄 Rebuilding file index...")
             await self.build_file_index(force_rebuild=True)
             await update.message.reply_text(f"✅ File index rebuilt with {len(self.file_index)} files.")
-            
+        
+        elif command == "shutdown":
+            await update.message.reply_text("⏹️ Shutting down the bot...")
+            self.exit_signal = True
+            # Try to gracefully stop the bot
+            try:
+                import sys
+                sys.exit(0)
+            except Exception:
+                os._exit(0)
         else:
             await update.message.reply_text("❌ Unknown admin command.")
 

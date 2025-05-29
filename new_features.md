@@ -1,6 +1,6 @@
 Implement the following features in the bot
 1. AI search should respond short and accurate (right now it spits out a really long text). If files are directly found, send the file to user directly, if more than one file is found, show all the files in the buttons, if no file is found then no need to show anything.
-2.. Add ability to the AI search to search thorugh pdfs and images and other redable documents using least system resources and ai tokens.
+2. Add ability to the AI search to search thorugh pdfs and images and other redable documents using least system resources and ai tokens.
 3. Add an admin command to shut down the bot from the bot chat menu. Also, when unlimited users are added, push commits to the github repository to update it. Right now it doenst do that when it runs from github actions
 4. add /about and /privacy commands to the bot for users who want to know more about this bot
 5. Modify the /start command to display status information even if the scipt is not active
