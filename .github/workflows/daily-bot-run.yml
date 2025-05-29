@@ -16,12 +16,12 @@ jobs:
       uses: actions/checkout@v4
       
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
-        python-version: '3.11'
+        python-version: '3.12'
         
     - name: Cache pip dependencies
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: ~/.cache/pip
         key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
@@ -37,19 +37,19 @@ jobs:
       run: |
         echo "Creating .env file with secrets..."
         cat > .env << EOF
-        # Azure/OneDrive Configuration
-        TENANT_ID=${{ secrets.TENANT_ID }}
-        CLIENT_ID=${{ secrets.CLIENT_ID }}
-        CLIENT_SECRET=${{ secrets.CLIENT_SECRET }}
+        # Telegram Bot Token from @BotFather
+        TELEGRAM_BOT_TOKEN=${{ secrets.BOT_TOKEN }}
         
-        # Telegram Bot Configuration
-        BOT_TOKEN=${{ secrets.BOT_TOKEN }}
+        # Azure App Registration details
+        AZURE_CLIENT_ID=${{ secrets.CLIENT_ID }}
+        AZURE_CLIENT_SECRET=${{ secrets.CLIENT_SECRET }}
+        AZURE_TENANT_ID=${{ secrets.TENANT_ID }}
         
-        # Claude AI Configuration
+        # Claude AI API (Optional - for AI file search)
         CLAUDE_API_KEY=${{ secrets.CLAUDE_API_KEY }}
         
-        # Optional: Webhook URL (leave empty for polling)
-        WEBHOOK_URL=${{ secrets.WEBHOOK_URL }}
+        # Optional: For debugging
+        DEBUG=False
         EOF
         
     - name: Verify environment setup
@@ -61,13 +61,32 @@ jobs:
         if [ -z "${{ secrets.BOT_TOKEN }}" ]; then echo "❌ BOT_TOKEN is missing"; exit 1; fi
         if [ -z "${{ secrets.CLAUDE_API_KEY }}" ]; then echo "❌ CLAUDE_API_KEY is missing"; exit 1; fi
         echo "✅ All required environment variables are set"
+        echo "🔍 Testing Python and dependencies..."
+        python --version
+        pip list | grep -E "(telegram|azure|anthropic)"
         
     - name: Run bot for 1 hour
       run: |
         echo "🚀 Starting OneDrive Telegram Bot at $(date) (Bangladesh Time: $(TZ='Asia/Dhaka' date))"
         echo "Bot will run for 1 hour..."
         
-        # Run the bot in background
+        # Test bot startup first
+        echo "🔍 Testing bot startup..."
+        timeout 30 python bot_continuous.py &
+        TEST_PID=$!
+        sleep 10
+        
+        if kill -0 $TEST_PID 2>/dev/null; then
+          echo "✅ Bot startup test successful"
+          kill $TEST_PID 2>/dev/null || true
+          sleep 5
+        else
+          echo "❌ Bot failed to start properly"
+          exit 1
+        fi
+        
+        # Now run the bot for the full hour
+        echo "📱 Starting bot for full 1-hour run..."
         python bot_continuous.py &
         BOT_PID=$!
         

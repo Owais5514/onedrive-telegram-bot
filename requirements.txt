@@ -1,7 +1,9 @@
 python-telegram-bot==20.7
 msgraph-sdk==1.5.4
 azure-identity==1.15.0
+azure-storage-file-share==12.21.0
 python-dotenv==1.0.0
 asyncio
 aiohttp
 anthropic==0.31.2
+isodate>=0.7.2
