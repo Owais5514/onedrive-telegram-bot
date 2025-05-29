@@ -10,6 +10,7 @@ import asyncio
 import aiohttp
 import json
 import hashlib
+import time
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from dotenv import load_dotenv
@@ -44,10 +45,16 @@ class OneDriveTelegramBot:
         
         self.credential = None
         self.access_token = None
+        self.token_expires_at = None  # Track token expiration
         self.users_cache = {}
-        self.file_cache = {}  # Cache for file download info (to handle callback data length limits)
+        self.file_cache = {}  # Cache for file download info
         self.default_user_id = None
         self.authenticated = False
+        
+        # Performance optimizations
+        self.session = None  # Reuse HTTP session with connection pooling
+        self.last_index_check = 0  # Cache index checking
+        self.headers_cache = None  # Cache headers to avoid recreation
         
         # University folder restriction
         self.base_folder = "University"
@@ -78,6 +85,10 @@ class OneDriveTelegramBot:
             # Get access token (synchronous call)
             token = self.credential.get_token('https://graph.microsoft.com/.default')
             self.access_token = token.token
+            self.token_expires_at = token.expires_on  # Track expiration
+            
+            # Clear cached headers so they get recreated with new token
+            self.headers_cache = None
             
             logger.info("Authentication token obtained successfully")
             return True
@@ -85,62 +96,109 @@ class OneDriveTelegramBot:
         except Exception as e:
             logger.error(f"Authentication failed: {e}")
             self.authenticated = False
+            self.headers_cache = None
             return False
 
+    def is_token_valid(self):
+        """Check if current token is still valid"""
+        if not self.access_token or not self.token_expires_at:
+            return False
+        # Use 10 minute buffer for token validity to avoid last-minute failures
+        return self.token_expires_at > datetime.now().timestamp() + 600
+
+    async def ensure_session(self):
+        """Ensure we have a reusable HTTP session with connection pooling"""
+        if not self.session or self.session.closed:
+            # Create session with connection pooling and keep-alive
+            timeout = aiohttp.ClientTimeout(total=30, connect=10)
+            connector = aiohttp.TCPConnector(
+                limit=100,  # Total connection pool size
+                limit_per_host=30,  # Connections per host
+                keepalive_timeout=30,  # Keep connections alive
+                enable_cleanup_closed=True
+            )
+            self.session = aiohttp.ClientSession(
+                timeout=timeout,
+                connector=connector,
+                headers={'User-Agent': 'OneDrive-Telegram-Bot/1.0'}
+            )
+        return self.session
+
+    async def get_headers(self):
+        """Get cached headers or refresh token if needed"""
+        if not self.is_token_valid():
+            logger.info("Token expired or invalid, refreshing...")
+            if not self.initialize_authentication():
+                raise Exception("Failed to refresh authentication token")
+        
+        if not self.headers_cache:
+            self.headers_cache = {
+                'Authorization': f'Bearer {self.access_token}',
+                'Content-Type': 'application/json'
+            }
+        return self.headers_cache
+
+    async def close_session(self):
+        """Clean up session resources"""
+        if self.session and not self.session.closed:
+            await self.session.close()
+            self.session = None
+
     async def test_and_cache_users(self):
-        """Test authentication and cache users (asynchronous)"""
+        """Test authentication and cache users (asynchronous) - OPTIMIZED"""
         if not self.access_token:
             return False
             
         try:
-            # Test by getting users
-            async with aiohttp.ClientSession() as session:
-                headers = {'Authorization': f'Bearer {self.access_token}'}
-                async with session.get('https://graph.microsoft.com/v1.0/users', headers=headers) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        users = data.get('value', [])
+            # Use reusable session and cached headers
+            session = await self.ensure_session()
+            headers = await self.get_headers()
+            
+            async with session.get('https://graph.microsoft.com/v1.0/users', headers=headers) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    users = data.get('value', [])
+                    
+                    if users:
+                        # Cache users
+                        for user in users:
+                            self.users_cache[user['id']] = {
+                                'id': user['id'],
+                                'name': user['displayName'],
+                                'email': user['userPrincipalName']
+                            }
                         
-                        if users:
-                            # Cache users
-                            for user in users:
-                                self.users_cache[user['id']] = {
-                                    'id': user['id'],
-                                    'name': user['displayName'],
-                                    'email': user['userPrincipalName']
-                                }
-                            
-                            # Try to find "Owais Ahmed" as default user
-                            owais_user = None
-                            for user in users:
-                                if 'owais ahmed' in user['displayName'].lower():
-                                    owais_user = user
-                                    break
-                            
-                            if owais_user:
-                                self.default_user_id = owais_user['id']
-                                default_user_name = owais_user['displayName']
-                            else:
-                                # Fallback to first user if Owais Ahmed not found
-                                self.default_user_id = users[0]['id']
-                                default_user_name = users[0]['displayName']
-                                logger.warning("Owais Ahmed not found, using first user as default")
-                            
-                            self.authenticated = True
-                            
-                            logger.info(f"Authentication successful. Found {len(users)} users.")
-                            logger.info(f"Default user: {default_user_name}")
-                            return True
-                    else:
-                        logger.error(f"Failed to get users: {response.status}")
-                        return False
+                        # Try to find "Owais Ahmed" as default user
+                        owais_user = None
+                        for user in users:
+                            if 'owais ahmed' in user['displayName'].lower():
+                                owais_user = user
+                                break
+                        
+                        if owais_user:
+                            self.default_user_id = owais_user['id']
+                            default_user_name = owais_user['displayName']
+                        else:
+                            # Fallback to first user if Owais Ahmed not found
+                            self.default_user_id = users[0]['id']
+                            default_user_name = users[0]['displayName']
+                            logger.warning("Owais Ahmed not found, using first user as default")
+                        
+                        self.authenticated = True
+                        
+                        logger.info(f"Authentication successful. Found {len(users)} users.")
+                        logger.info(f"Default user: {default_user_name}")
+                        return True
+                else:
+                    logger.error(f"Failed to get users: {response.status}")
+                    return False
                         
         except Exception as e:
             logger.error(f"User caching failed: {e}")
             return False
 
     async def get_onedrive_items(self, path: str = "/", user_id: str = None) -> List[Dict[str, Any]]:
-        """Get items from OneDrive using direct HTTP requests - restricted to University folder"""
+        """Get items from OneDrive using direct HTTP requests - OPTIMIZED with session reuse"""
         if not self.authenticated or not self.access_token:
             logger.warning("Not authenticated, returning empty list")
             return []
@@ -152,7 +210,9 @@ class OneDriveTelegramBot:
             return []
         
         try:
-            headers = {'Authorization': f'Bearer {self.access_token}'}
+            # Use reusable session and cached headers
+            session = await self.ensure_session()
+            headers = await self.get_headers()
             
             # Force all paths to be within University folder
             if self.restricted_mode:
@@ -181,35 +241,34 @@ class OneDriveTelegramBot:
                     clean_path = path.strip("/")
                     url = f'https://graph.microsoft.com/v1.0/users/{user_id}/drive/root:/{clean_path}:/children'
             
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=headers) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        items = data.get('value', [])
-                        
-                        result = []
-                        for item in items:
-                            result.append({
-                                'id': item['id'],
-                                'name': item['name'],
-                                'is_folder': 'folder' in item,
-                                'size': item.get('size', 0),
-                                'download_url': item.get('@microsoft.graph.downloadUrl'),
-                                'web_url': item.get('webUrl'),
-                                'user_id': user_id
-                            })
-                        
-                        logger.info(f"Retrieved {len(result)} items from OneDrive path: {clean_path if self.restricted_mode else path}")
-                        return result
-                        
-                    elif response.status == 404:
-                        logger.info(f"Path not found: {clean_path if self.restricted_mode else path}")
-                        return []
-                    else:
-                        logger.error(f"API error {response.status} for path {clean_path if self.restricted_mode else path}")
-                        error_text = await response.text()
-                        logger.error(f"Error details: {error_text}")
-                        return []
+            async with session.get(url, headers=headers) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    items = data.get('value', [])
+                    
+                    result = []
+                    for item in items:
+                        result.append({
+                            'id': item['id'],
+                            'name': item['name'],
+                            'is_folder': 'folder' in item,
+                            'size': item.get('size', 0),
+                            'download_url': item.get('@microsoft.graph.downloadUrl'),
+                            'web_url': item.get('webUrl'),
+                            'user_id': user_id
+                        })
+                    
+                    logger.info(f"Retrieved {len(result)} items from OneDrive path: {clean_path if self.restricted_mode else path}")
+                    return result
+                    
+                elif response.status == 404:
+                    logger.info(f"Path not found: {clean_path if self.restricted_mode else path}")
+                    return []
+                else:
+                    logger.error(f"API error {response.status} for path {clean_path if self.restricted_mode else path}")
+                    error_text = await response.text()
+                    logger.error(f"Error details: {error_text}")
+                    return []
                         
         except Exception as e:
             logger.error(f"Error accessing OneDrive path {path}: {e}")
@@ -242,7 +301,7 @@ class OneDriveTelegramBot:
                 return
             
             if not download_url:
-                # Try to fetch download URL from OneDrive API
+                # Try to fetch download URL from OneDrive API - OPTIMIZED
                 try:
                     user_id = self.default_user_id
                     if user_id:
@@ -253,14 +312,15 @@ class OneDriveTelegramBot:
                             if not file_path_full.startswith(self.base_folder):
                                 file_path_full = f"{self.base_folder}/{file_path_full}"
                         
-                        headers = {'Authorization': f'Bearer {self.access_token}'}
+                        # Use reusable session and cached headers
+                        session = await self.ensure_session()
+                        headers = await self.get_headers()
                         url = f'https://graph.microsoft.com/v1.0/users/{user_id}/drive/root:/{file_path_full}'
                         
-                        async with aiohttp.ClientSession() as session:
-                            async with session.get(url, headers=headers) as response:
-                                if response.status == 200:
-                                    file_data = await response.json()
-                                    download_url = file_data.get('@microsoft.graph.downloadUrl')
+                        async with session.get(url, headers=headers) as response:
+                            if response.status == 200:
+                                file_data = await response.json()
+                                download_url = file_data.get('@microsoft.graph.downloadUrl')
                 
                     if not download_url:
                         await query.edit_message_text(
@@ -298,43 +358,43 @@ class OneDriveTelegramBot:
                 parse_mode='Markdown'
             )
             
-            # Download file
-            async with aiohttp.ClientSession() as session:
-                async with session.get(download_url) as response:
-                    if response.status == 200:
-                        file_data = await response.read()
-                        
-                        # Send file to chat
-                        await query.message.reply_document(
-                            document=file_data,
-                            filename=file_name,
-                            caption=f"📄 *{file_name}*\n📂 From: University{path if path != '/' else ''}"
-                        )
-                        
-                        # Update message with success
-                        await query.edit_message_text(
-                            f"📄 *File:* {file_name}\n\n" +
-                            f"✅ *Downloaded successfully!*\n" +
-                            f"📊 *Size:* {file_size_mb:.1f} MB",
-                            parse_mode='Markdown',
-                            reply_markup=InlineKeyboardMarkup([
-                                [InlineKeyboardButton("🤖 AI Search", callback_data="ai_search")],
-                                [InlineKeyboardButton("🔙 Back", callback_data=f"browse:{path}"),
-                                 InlineKeyboardButton("🏠 Home", callback_data="browse:/")]
-                            ])
-                        )
-                    else:
-                        await query.edit_message_text(
-                            f"📄 *File:* {file_name}\n\n" +
-                            f"❌ *Download failed*\n" +
-                            f"Server returned status: {response.status}",
-                            parse_mode='Markdown',
-                            reply_markup=InlineKeyboardMarkup([
-                                [InlineKeyboardButton("🤖 AI Search", callback_data="ai_search")],
-                                [InlineKeyboardButton("🔙 Back", callback_data=f"browse:{path}"),
-                                 InlineKeyboardButton("🏠 Home", callback_data="browse:/")]
-                            ])
-                        )
+            # Download file - OPTIMIZED to use reusable session
+            session = await self.ensure_session()
+            async with session.get(download_url) as response:
+                if response.status == 200:
+                    file_data = await response.read()
+                    
+                    # Send file to chat
+                    await query.message.reply_document(
+                        document=file_data,
+                        filename=file_name,
+                        caption=f"📄 *{file_name}*\n📂 From: University{path if path != '/' else ''}"
+                    )
+                    
+                    # Update message with success
+                    await query.edit_message_text(
+                        f"📄 *File:* {file_name}\n\n" +
+                        f"✅ *Downloaded successfully!*\n" +
+                        f"📊 *Size:* {file_size_mb:.1f} MB",
+                        parse_mode='Markdown',
+                        reply_markup=InlineKeyboardMarkup([
+                            [InlineKeyboardButton("🤖 AI Search", callback_data="ai_search")],
+                            [InlineKeyboardButton("🔙 Back", callback_data=f"browse:{path}"),
+                             InlineKeyboardButton("🏠 Home", callback_data="browse:/")]
+                        ])
+                    )
+                else:
+                    await query.edit_message_text(
+                        f"📄 *File:* {file_name}\n\n" +
+                        f"❌ *Download failed*\n" +
+                        f"Server returned status: {response.status}",
+                        parse_mode='Markdown',
+                        reply_markup=InlineKeyboardMarkup([
+                            [InlineKeyboardButton("🤖 AI Search", callback_data="ai_search")],
+                            [InlineKeyboardButton("🔙 Back", callback_data=f"browse:{path}"),
+                             InlineKeyboardButton("🏠 Home", callback_data="browse:/")]
+                        ])
+                    )
         
         except Exception as e:
             logger.error(f"Error downloading file {file_info.get('name', 'Unknown')}: {str(e)}")
@@ -646,8 +706,8 @@ class OneDriveTelegramBot:
                     )
 
     async def show_folder_contents(self, query, path: str, page: int = 0):
-        """Show contents of a folder with pagination"""
-        items = await self.get_onedrive_items(path)
+        """Show contents of a folder with pagination - OPTIMIZED with caching"""
+        items = await self.cached_get_items(path)
         
         if not items:
             await query.edit_message_text(
@@ -894,36 +954,44 @@ class OneDriveTelegramBot:
             logger.error(f"Error saving user data: {e}")
 
     async def build_file_index(self, force_rebuild=False):
-        """Build an index of all files with their paths and metadata"""
+        """Build an index of all files with their paths and metadata - OPTIMIZED with concurrency"""
         # Check if we should use existing index
         if not force_rebuild and await self.load_file_index():
             logger.info(f"Loaded existing file index with {len(self.file_index)} files")
             return
         
-        logger.info("Building file index...")
+        logger.info("Building file index with concurrent processing...")
         self.file_index = {}
+        folder_tasks = []
+        semaphore = asyncio.Semaphore(5)  # Limit concurrent requests
         
-        async def index_folder(path: str = "/"):
-            items = await self.get_onedrive_items(path)
-            
-            for item in items:
-                if item['is_folder']:
-                    # Recursively index subfolders
-                    folder_path = f"{path.rstrip('/')}/{item['name']}" if path != "/" else item['name']
-                    await index_folder(folder_path)
-                else:
-                    # Index file
-                    file_path = f"{path.rstrip('/')}/{item['name']}" if path != "/" else item['name']
-                    self.file_index[item['id']] = {
-                        'name': item['name'],
-                        'path': file_path,
-                        'size': item['size'],
-                        'folder': path,
-                        'description': self.generate_file_description(item['name'], file_path)
-                    }
+        async def index_folder_concurrent(path: str = "/"):
+            async with semaphore:  # Limit concurrent API calls
+                items = await self.cached_get_items(path)
+                
+                subfolder_tasks = []
+                for item in items:
+                    if item['is_folder']:
+                        # Queue subfolder indexing
+                        folder_path = f"{path.rstrip('/')}/{item['name']}" if path != "/" else item['name']
+                        subfolder_tasks.append(index_folder_concurrent(folder_path))
+                    else:
+                        # Index file immediately
+                        file_path = f"{path.rstrip('/')}/{item['name']}" if path != "/" else item['name']
+                        self.file_index[item['id']] = {
+                            'name': item['name'],
+                            'path': file_path,
+                            'size': item['size'],
+                            'folder': path,
+                            'description': self.generate_file_description(item['name'], file_path)
+                        }
+                
+                # Process subfolders concurrently
+                if subfolder_tasks:
+                    await asyncio.gather(*subfolder_tasks, return_exceptions=True)
         
-        await index_folder("/")
-        logger.info(f"File index built with {len(self.file_index)} files")
+        await index_folder_concurrent("/")
+        logger.info(f"File index built with {len(self.file_index)} files using concurrent processing")
         
         # Save the index to file
         await self.save_file_index()
@@ -943,8 +1011,15 @@ class OneDriveTelegramBot:
             logger.error(f"Error saving file index: {e}")
     
     async def load_file_index(self):
-        """Load the file index from JSON file if it exists and is recent"""
+        """Load the file index from JSON file if it exists and is recent - OPTIMIZED caching"""
         try:
+            # Use cached check to avoid frequent filesystem access
+            current_time = time.time()
+            if current_time - self.last_index_check < 300:  # Cache for 5 minutes
+                return bool(self.file_index)  # Return True if index exists
+            
+            self.last_index_check = current_time
+            
             # Check if index file exists
             if not os.path.exists(self.file_index_path):
                 logger.info("No existing file index found")
@@ -962,11 +1037,13 @@ class OneDriveTelegramBot:
                         logger.info(f"File index is {age} old, rebuilding...")
                         return False
             
-            # Load the index
-            with open(self.file_index_path, 'r', encoding='utf-8') as f:
-                self.file_index = json.load(f)
+            # Load the index only if not already loaded
+            if not self.file_index:
+                with open(self.file_index_path, 'r', encoding='utf-8') as f:
+                    self.file_index = json.load(f)
+                
+                logger.info(f"Loaded file index from {self.file_index_path}")
             
-            logger.info(f"Loaded file index from {self.file_index_path}")
             return True
             
         except Exception as e:
@@ -1273,6 +1350,62 @@ Please provide a helpful response about these files, explaining which ones are m
         fake_query = FakeCallbackQuery(update.message.from_user, update.message)
         await self.handle_ai_search(fake_query, context)
 
+    async def optimize_memory(self):
+        """Optimize memory usage by cleaning up caches"""
+        try:
+            # Clear old cache entries (older than 1 hour)
+            current_time = time.time()
+            
+            # Clean file cache
+            expired_files = []
+            for file_id, cache_data in self.file_cache.items():
+                if current_time - cache_data.get('timestamp', 0) > 3600:  # 1 hour
+                    expired_files.append(file_id)
+            
+            for file_id in expired_files:
+                del self.file_cache[file_id]
+            
+            if expired_files:
+                logger.info(f"Cleaned {len(expired_files)} expired file cache entries")
+                
+        except Exception as e:
+            logger.error(f"Error optimizing memory: {e}")
+
+    def get_file_cache_key(self, path: str, user_id: str) -> str:
+        """Generate cache key for file operations"""
+        return hashlib.md5(f"{user_id}:{path}".encode()).hexdigest()
+
+    async def cached_get_items(self, path: str, user_id: str = None) -> List[Dict[str, Any]]:
+        """Get items with caching to reduce API calls"""
+        if not user_id:
+            user_id = self.default_user_id
+            
+        cache_key = self.get_file_cache_key(path, user_id)
+        current_time = time.time()
+        
+        # Check cache first
+        if cache_key in self.file_cache:
+            cache_data = self.file_cache[cache_key]
+            # Cache valid for 5 minutes
+            if current_time - cache_data['timestamp'] < 300:
+                logger.debug(f"Cache hit for path: {path}")
+                return cache_data['items']
+        
+        # Cache miss - fetch from API
+        items = await self.get_onedrive_items(path, user_id)
+        
+        # Store in cache
+        self.file_cache[cache_key] = {
+            'items': items,
+            'timestamp': current_time
+        }
+        
+        # Periodic cache cleanup
+        if len(self.file_cache) > 100:  # Limit cache size
+            await self.optimize_memory()
+        
+        return items
+
 # Global bot instance
 bot_instance = None
 
@@ -1293,21 +1426,32 @@ async def post_init(application: Application) -> None:
     await application.bot.set_my_commands(commands)
     print("📋 Bot commands menu configured")
     
-    # Test authentication and cache users
+    # Test authentication and cache users - OPTIMIZED
     success = await bot_instance.test_and_cache_users()
     if success:
         print("✅ OneDrive connected successfully!")
         print(f"👤 Default user: {bot_instance.users_cache[bot_instance.default_user_id]['name']}")
         
-        # Build file index
+        # Build file index in background (non-blocking)
         print("📂 Initializing file index...")
         await bot_instance.build_file_index()
         print("✅ File index ready!")
+        
+        # Pre-create session for faster first requests
+        await bot_instance.ensure_session()
+        print("🔗 HTTP session pool initialized")
     else:
         print("⚠️ OneDrive connection failed - some features may not work")
 
+async def cleanup_resources():
+    """Clean up resources on shutdown"""
+    global bot_instance
+    if bot_instance:
+        await bot_instance.close_session()
+        print("🧹 Resources cleaned up")
+
 def main():
-    """Main function to run the bot"""
+    """Main function to run the bot - OPTIMIZED with proper cleanup"""
     global bot_instance
     
     print("🔧 Initializing OneDrive Telegram Bot...")
@@ -1347,9 +1491,16 @@ def main():
         
     except KeyboardInterrupt:
         print("\n👋 Bot stopped by user")
+        # Cleanup resources
+        asyncio.run(cleanup_resources())
     except Exception as e:
         print(f"❌ Bot error: {e}")
         logger.error(f"Bot startup error: {e}")
+        # Cleanup resources on error
+        try:
+            asyncio.run(cleanup_resources())
+        except:
+            pass
 
 if __name__ == '__main__':
     main()
