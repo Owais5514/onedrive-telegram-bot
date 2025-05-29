@@ -53,6 +53,7 @@ class OneDriveTelegramBot:
         self.default_user_id = None
         self.authenticated = False
         self.exit_signal = False  # Flag to signal bot shutdown
+        self.application = None  # Reference to telegram Application instance
         
         # Performance optimizations
         self.session = None  # Reuse HTTP session with connection pooling
@@ -909,6 +910,16 @@ class OneDriveTelegramBot:
     def commit_and_push_unlimited_users_update(self, action_desc: str):
         """Commit and push unlimited_users.json to GitHub repo."""
         try:
+            # Configure git user identity if not set (for GitHub Actions)
+            try:
+                result = subprocess.run(["git", "config", "user.email"], capture_output=True, text=True)
+                if not result.stdout.strip():
+                    subprocess.run(["git", "config", "user.email", "bot@github-actions.local"], check=True)
+                    subprocess.run(["git", "config", "user.name", "OneDrive Telegram Bot"], check=True)
+                    logger.info("Configured git user identity for GitHub Actions")
+            except Exception as config_e:
+                logger.warning(f"Could not configure git identity: {config_e}")
+            
             subprocess.run(["git", "add", "unlimited_users.json"], check=True)
             subprocess.run(["git", "commit", "-m", f"{action_desc}"], check=True)
             subprocess.run(["git", "push"], check=True)
@@ -1279,11 +1290,23 @@ Please provide a helpful response about these files, explaining which ones are m
         elif command == "shutdown":
             await update.message.reply_text("⏹️ Shutting down the bot...")
             self.exit_signal = True
-            # Try to gracefully stop the bot
+            
+            # Proper graceful shutdown for telegram bot
             try:
-                import sys
-                sys.exit(0)
-            except Exception:
+                # Stop the application gracefully
+                if self.application:
+                    await self.application.stop()
+                    await self.application.shutdown()
+                    logger.info("Bot stopped gracefully")
+                else:
+                    # Fallback if application reference is not available
+                    logger.warning("Application reference not available, using system exit")
+                    import sys
+                    sys.exit(0)
+            except Exception as e:
+                logger.error(f"Error during bot shutdown: {e}")
+                # Emergency shutdown
+                import os
                 os._exit(0)
         else:
             await update.message.reply_text("❌ Unknown admin command.")
@@ -1618,6 +1641,9 @@ def main():
         # Create Telegram application
         print("🤖 Setting up Telegram bot...")
         application = Application.builder().token(bot_instance.bot_token).post_init(post_init).build()
+        
+        # Store application reference in bot instance for proper shutdown
+        bot_instance.application = application
         
         # Add handlers
         application.add_handler(CommandHandler("start", bot_instance.start))
