@@ -1,0 +1,47 @@
+#!/bin/bash
+
+# Simple GitHub Secrets Test
+echo "🔍 Testing GitHub Repository Secrets"
+echo "===================================="
+echo ""
+
+echo "This test will help you verify that your GitHub secrets are properly configured."
+echo ""
+
+echo "📋 Required GitHub Secrets (Repository Settings → Secrets → Actions):"
+echo ""
+echo "Secret Name: TENANT_ID"
+echo "Value: 30a0ea96-b767-46d1-b4d4-259a2afdfe88"
+echo ""
+echo "Secret Name: CLIENT_ID" 
+echo "Value: 6bb1d29e-c2cb-45a0-a37a-71832c7f5ad8"
+echo ""
+echo "Secret Name: CLIENT_SECRET"
+echo "Value: L248Q~eB8PdxOWlRWizld_Te9_o-KhL4eXTCocTm"
+echo ""
+echo "Secret Name: BOT_TOKEN"
+echo "Value: 6963034827:AAGBtg0IClx60JPqPLPpQMe6EiyXNYI8-nM"
+echo ""
+echo "Secret Name: CLAUDE_API_KEY"
+echo "Value: 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"
+echo ""
+
+echo "🔧 How to add secrets to GitHub:"
+echo "1. Go to your GitHub repository"
+echo "2. Click Settings tab"
+echo "3. Click 'Secrets and variables' → 'Actions'"
+echo "4. Click 'New repository secret'"
+echo "5. Add each secret with the EXACT name and value shown above"
+echo ""
+
+echo "⚠️  IMPORTANT:"
+echo "• Secret names are case-sensitive"
+echo "• Copy values exactly (no extra spaces)"
+echo "• All 5 secrets must be present"
+echo ""
+
+echo "✅ After adding secrets, test by:"
+echo "1. Go to Actions tab in your repository"
+echo "2. Click 'OneDrive Telegram Bot Daily Run'"
+echo "3. Click 'Run workflow' → 'Run workflow'"
+echo "4. Check the logs for successful verification"

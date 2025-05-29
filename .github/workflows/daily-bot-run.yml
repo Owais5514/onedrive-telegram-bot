@@ -38,12 +38,12 @@ jobs:
         echo "Creating .env file with secrets..."
         cat > .env << EOF
         # Telegram Bot Token from @BotFather
-        TELEGRAM_BOT_TOKEN=${{ secrets.BOT_TOKEN }}
+        TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
         
         # Azure App Registration details
-        AZURE_CLIENT_ID=${{ secrets.CLIENT_ID }}
-        AZURE_CLIENT_SECRET=${{ secrets.CLIENT_SECRET }}
-        AZURE_TENANT_ID=${{ secrets.TENANT_ID }}
+        AZURE_CLIENT_ID=${{ secrets.AZURE_CLIENT_ID }}
+        AZURE_CLIENT_SECRET=${{ secrets.AZURE_CLIENT_SECRET }}
+        AZURE_TENANT_ID=${{ secrets.AZURE_TENANT_ID }}
         
         # Claude AI API (Optional - for AI file search)
         CLAUDE_API_KEY=${{ secrets.CLAUDE_API_KEY }}
@@ -53,19 +53,32 @@ jobs:
         EOF
         
     - name: Verify environment setup
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
       run: |
         echo "Checking environment variables..."
-        if [ -z "${{ secrets.TENANT_ID }}" ]; then echo "❌ TENANT_ID is missing"; exit 1; fi
-        if [ -z "${{ secrets.CLIENT_ID }}" ]; then echo "❌ CLIENT_ID is missing"; exit 1; fi  
-        if [ -z "${{ secrets.CLIENT_SECRET }}" ]; then echo "❌ CLIENT_SECRET is missing"; exit 1; fi
-        if [ -z "${{ secrets.BOT_TOKEN }}" ]; then echo "❌ BOT_TOKEN is missing"; exit 1; fi
-        if [ -z "${{ secrets.CLAUDE_API_KEY }}" ]; then echo "❌ CLAUDE_API_KEY is missing"; exit 1; fi
+        if [ -z "$AZURE_TENANT_ID" ]; then echo "❌ AZURE_TENANT_ID is missing"; exit 1; fi
+        if [ -z "$AZURE_CLIENT_ID" ]; then echo "❌ AZURE_CLIENT_ID is missing"; exit 1; fi  
+        if [ -z "$AZURE_CLIENT_SECRET" ]; then echo "❌ AZURE_CLIENT_SECRET is missing"; exit 1; fi
+        if [ -z "$TELEGRAM_BOT_TOKEN" ]; then echo "❌ TELEGRAM_BOT_TOKEN is missing"; exit 1; fi
+        if [ -z "$CLAUDE_API_KEY" ]; then echo "❌ CLAUDE_API_KEY is missing"; exit 1; fi
         echo "✅ All required environment variables are set"
         echo "🔍 Testing Python and dependencies..."
         python --version
         pip list | grep -E "(telegram|azure|anthropic)"
         
     - name: Run bot for 1 hour
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        CLAUDE_API_KEY: ${{ secrets.CLAUDE_API_KEY }}
+        DEBUG: false
       run: |
         echo "🚀 Starting OneDrive Telegram Bot at $(date) (Bangladesh Time: $(TZ='Asia/Dhaka' date))"
         echo "Bot will run for 1 hour..."
