@@ -1,11 +1,13 @@
-# Ignore environment variables
+# Environment variables
 .env
 
-# Python
+# Python cache and bytecode
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
+
+# Distribution / packaging
 .Python
 build/
 develop-eggs/
@@ -18,6 +20,47 @@ lib64/
 parts/
 sdist/
 var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Logs
+*.log
+logs/
+
+# Test files (keep clean)
+test_*.py
+*_test.py
+debug*.py
+diagnostic*.py
+verify_*.py
+simple_test.*
+
+# Temporary reports and guides
+*_REPORT.md
+*_GUIDE.md
+*ENHANCEMENT*.md
+*SUCCESS*.md
+QUICKSTART.md
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Bot data files (keep these)
+!file_index.json
+!user_queries.json
+!unlimited_users.json
+!index_timestamp.txt
 wheels/
 *.egg-info/
 .installed.cfg
