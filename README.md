@@ -82,6 +82,13 @@ Make sure to **Grant admin consent** for these permissions in the Azure portal.
 5. In groups, bot messages will auto-delete after 5 minutes of inactivity
 6. Regular users get 1 AI search per day; admins can grant unlimited access
 
+### Available Commands
+- `/start` - Show main menu and browse OneDrive
+- `/ai_search` - Start AI-powered file search
+- `/help` - Show help and usage instructions
+- `/about` - Learn about the bot's features and functionality
+- `/privacy` - View privacy policy and data handling information
+
 ### AI Search Examples
 - "Find my calculus notes"
 - "Show me Python programming files"

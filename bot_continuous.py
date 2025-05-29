@@ -1272,7 +1272,9 @@ Please provide a helpful response about these files, explaining which ones are m
             "*Available Commands:*\n"
             "• `/start` - Show main menu\n"
             "• `/ai_search` - Start AI-powered file search\n"
-            "• `/help` - Show this help message\n\n"
+            "• `/help` - Show this help message\n"
+            "• `/about` - Learn about this bot\n"
+            "• `/privacy` - View privacy policy\n\n"
             "*Features:*\n"
             "📁 Browse files and folders in University OneDrive\n"
             "🤖 AI-powered intelligent file search\n"
@@ -1314,6 +1316,125 @@ Please provide a helpful response about these files, explaining which ones are m
                     [InlineKeyboardButton("🤖 AI Search", callback_data="ai_search")],
                     [InlineKeyboardButton("📁 Browse Files", callback_data="browse:/"),
                      InlineKeyboardButton("🏠 Home", callback_data="browse:/")]
+                ]),
+                parse_mode='Markdown'
+            )
+
+    async def about_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /about command"""
+        about_text = (
+            "🤖 *OneDrive Telegram Bot*\n\n"
+            "*What is this bot?*\n"
+            "This bot provides secure access to your organization's OneDrive files "
+            "directly through Telegram. Browse folders, search files with AI, and "
+            "download documents instantly.\n\n"
+            "*Key Features:*\n"
+            "📁 Browse University OneDrive files and folders\n"
+            "🤖 AI-powered intelligent file search using Claude AI\n"
+            "⬇️ Download files directly to Telegram\n"
+            "🔍 Search through thousands of files instantly\n"
+            "🔒 Secure authentication via Microsoft Graph API\n"
+            "👥 Multi-user support with rate limiting\n"
+            "💬 Group chat support with auto-cleanup\n\n"
+            "*How it works:*\n"
+            "• Uses Microsoft Graph API for secure OneDrive access\n"
+            "• AI search powered by Claude 3.5 Sonnet\n"
+            "• Files are streamed directly from OneDrive\n"
+            "• No files are stored on our servers\n\n"
+            "*Rate Limits:*\n"
+            "• Regular users: 1 AI search per day\n"
+            "• Unlimited users: No limits\n\n"
+            "*Need help?* Use /help for usage instructions"
+        )
+        
+        if update.message.chat.type in ['group', 'supergroup']:
+            # In group, send with deletion schedule
+            sent_message = await update.message.reply_text(
+                about_text,
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🤖 AI Search", callback_data="ai_search")],
+                    [InlineKeyboardButton("📁 Browse Files", callback_data="browse:/")]
+                ]),
+                parse_mode='Markdown'
+            )
+            
+            # Schedule message for deletion
+            await asyncio.create_task(
+                self.schedule_message_deletion(
+                    sent_message.chat.id, 
+                    sent_message.message_id, 
+                    update.message.from_user.id
+                )
+            )
+        else:
+            # Normal message in private chat
+            await update.message.reply_text(
+                about_text,
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🤖 AI Search", callback_data="ai_search")],
+                    [InlineKeyboardButton("📁 Browse Files", callback_data="browse:/")]
+                ]),
+                parse_mode='Markdown'
+            )
+
+    async def privacy_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /privacy command"""
+        privacy_text = (
+            "🔒 *Privacy Policy - OneDrive Bot*\n\n"
+            "*What data do we access?*\n"
+            "• OneDrive files and folder structure (read-only)\n"
+            "• User profile information for authentication\n"
+            "• Telegram user ID and chat information\n\n"
+            "*What data do we store?*\n"
+            "• User query counts (for rate limiting)\n"
+            "• File index for search functionality\n"
+            "• Temporary download links (expire automatically)\n"
+            "• No actual file content is stored\n\n"
+            "*What data do we NOT store?*\n"
+            "• Your OneDrive files or documents\n"
+            "• Your passwords or credentials\n"
+            "• Personal messages or conversations\n"
+            "• Any sensitive personal information\n\n"
+            "*Data Security:*\n"
+            "• All connections use HTTPS encryption\n"
+            "• Microsoft Graph API provides secure authentication\n"
+            "• Download links are temporary and expire quickly\n"
+            "• No data is shared with third parties\n\n"
+            "*AI Search Privacy:*\n"
+            "• Search queries are sent to Claude AI for processing\n"
+            "• Only file names and descriptions are shared (not content)\n"
+            "• No personal data is included in AI requests\n\n"
+            "*Your Rights:*\n"
+            "• You can stop using the bot at any time\n"
+            "• Cached data is automatically cleaned up\n"
+            "• Contact your admin for data removal requests\n\n"
+            "*Questions?* Contact your system administrator"
+        )
+        
+        if update.message.chat.type in ['group', 'supergroup']:
+            # In group, send with deletion schedule
+            sent_message = await update.message.reply_text(
+                privacy_text,
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🏠 Back to Menu", callback_data="browse:/")]
+                ]),
+                parse_mode='Markdown'
+            )
+            
+            # Schedule message for deletion
+            await asyncio.create_task(
+                self.schedule_message_deletion(
+                    sent_message.chat.id, 
+                    sent_message.message_id, 
+                    update.message.from_user.id
+                )
+            )
+        else:
+            # Normal message in private chat
+            await update.message.reply_text(
+                privacy_text,
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🏠 Back to Menu", callback_data="browse:/")]
                 ]),
                 parse_mode='Markdown'
             )
@@ -1421,7 +1542,9 @@ async def post_init(application: Application) -> None:
     commands = [
         BotCommand("start", "Show main menu"),
         BotCommand("ai_search", "AI-powered file search"),
-        BotCommand("help", "Show help and usage instructions")
+        BotCommand("help", "Show help and usage instructions"),
+        BotCommand("about", "Learn about this bot"),
+        BotCommand("privacy", "View privacy policy")
     ]
     await application.bot.set_my_commands(commands)
     print("📋 Bot commands menu configured")
@@ -1479,6 +1602,8 @@ def main():
         application.add_handler(CallbackQueryHandler(bot_instance.handle_callback))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, bot_instance.handle_message))
         application.add_handler(CommandHandler("help", bot_instance.help_command))
+        application.add_handler(CommandHandler("about", bot_instance.about_command))
+        application.add_handler(CommandHandler("privacy", bot_instance.privacy_command))
         application.add_handler(CommandHandler("ai_search", bot_instance.ai_search_command))
         
         print("🚀 Starting bot...")
