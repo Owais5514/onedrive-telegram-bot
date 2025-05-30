@@ -94,6 +94,56 @@ Make sure to **Grant admin consent** for these permissions in the Azure portal.
 - `/admin list_unlimited` - List users with unlimited access
 - `/admin rebuild_index` - Rebuild the file search index
 
+## Static Web Interface
+
+A static web interface is available to browse your OneDrive contents. It uses a pre-generated JSON index (`docs/onedrive_index.json`) and runs entirely in your web browser, making it suitable for hosting on platforms like GitHub Pages.
+
+### Generating the File/Folder Index (`onedrive_index.json`)
+
+The `generate_onedrive_index.py` script is responsible for creating the JSON index file that the web interface uses.
+
+**Prerequisites:**
+- Python 3.x installed.
+- Dependencies from `requirements.txt` installed. Run:
+  ```bash
+  pip install -r requirements.txt
+  ```
+- A `.env` file must be present in the root directory, configured with your Azure application credentials:
+  - `AZURE_CLIENT_ID`
+  - `AZURE_CLIENT_SECRET`
+  - `AZURE_TENANT_ID`
+  (This is the same `.env` file and credentials used by the Telegram bot.)
+
+**Running the script:**
+Execute the script from the root of the repository:
+```bash
+python generate_onedrive_index.py
+```
+This will create or update the `docs/onedrive_index.json` file.
+
+**Configuration Options:**
+The script has a few configurable options at the top:
+- `DEFAULT_BASE_FOLDER`: Specifies the root folder to start indexing from (defaults to "University"). This can also be set via the `ONEDRIVE_BASE_FOLDER` environment variable.
+- `DEFAULT_RESTRICTED_MODE`: If `True` (default), indexing is confined to the `DEFAULT_BASE_FOLDER`. If `False`, it attempts to index the entire OneDrive. This can also be set via the `ONEDRIVE_RESTRICTED_MODE` environment variable (e.g., `ONEDRIVE_RESTRICTED_MODE=false`).
+- `PREFERRED_USER_DISPLAY_NAME`: If you have multiple users under your Azure AD, you can set this to the display name of the user whose OneDrive you want to index (defaults to "Owais Ahmed").
+
+### Viewing the Web Interface
+
+Once `docs/onedrive_index.json` has been generated:
+1.  Open the `docs/index.html` file in your web browser.
+2.  If you are using GitHub Pages, configure the `docs` folder as your publishing source. The interface will then be accessible via your GitHub Pages URL (e.g., `https://<username>.github.io/<repositoryname>/`).
+
+### Functionality
+
+The web interface allows you to:
+- Browse the folder structure defined in `onedrive_index.json`.
+- Navigate into subfolders.
+- View files listed within folders.
+- Click on a file to open its corresponding `webUrl` from OneDrive (this will usually prompt a download or display the file if supported by the browser/OneDrive).
+- Use breadcrumbs for easy navigation back to parent folders or Home.
+
+It is a read-only viewer and does not allow any modifications to your OneDrive content.
+
 ## Configuration
 
 The bot can be configured by modifying variables in `bot_continuous.py`:

@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OneDrive Web Viewer</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>OneDrive File Explorer</h1>
+    </header>
+    <nav>
+        <div id="breadcrumbs">
+            <!-- Breadcrumbs will be populated here by JavaScript -->
+            <!-- Initial Home link can be static or dynamically added -->
+            <a href="#" data-path="/">Home</a>
+        </div>
+    </nav>
+    <main>
+        <div id="loading-indicator" style="display: none;">Loading...</div>
+        <div id="file-list">
+            <!-- Files and folders will be listed here by JavaScript -->
+        </div>
+    </main>
+    <script src="script.js"></script>
+</body>
+</html>

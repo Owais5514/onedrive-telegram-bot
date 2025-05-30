@@ -1,0 +1,140 @@
+body {
+    font-family: Arial, Helvetica, sans-serif;
+    margin: 0;
+    padding: 0; /* Changed to 0, header/main will have padding */
+    background-color: #f4f4f4;
+    color: #333;
+    line-height: 1.6;
+}
+
+header {
+    background-color: #0078d4; /* Microsoft Blue */
+    color: #ffffff;
+    padding: 15px 20px;
+    text-align: center; /* Centering h1 by styling header */
+}
+
+header h1 {
+    margin: 0;
+    font-size: 1.8em;
+}
+
+nav#breadcrumbs {
+    padding: 12px 20px;
+    background-color: #e9e9e9;
+    border-bottom: 1px solid #ccc;
+    margin-bottom: 20px;
+}
+
+nav#breadcrumbs a {
+    text-decoration: none;
+    color: #005a9e; /* Darker blue for links */
+    margin-right: 8px;
+    font-size: 0.95em;
+}
+
+nav#breadcrumbs a:hover {
+    text-decoration: underline;
+}
+
+nav#breadcrumbs a:last-child {
+    margin-right: 0;
+    font-weight: bold; /* Current page in breadcrumb */
+    color: #333;
+}
+
+main {
+    padding: 0 20px 20px 20px; /* Padding for content area */
+}
+
+#loading-indicator {
+    text-align: center;
+    padding: 20px;
+    font-style: italic;
+    color: #666;
+    font-size: 1.1em;
+}
+
+#file-list {
+    /* No specific styles needed for the container itself, items will be styled */
+}
+
+#file-list .list-item {
+    padding: 12px 15px;
+    border: 1px solid #ddd;
+    background-color: #fff;
+    margin-bottom: -1px; /* Create a "connected" list look */
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    transition: background-color 0.2s ease-in-out;
+}
+
+#file-list .list-item:first-child {
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+}
+#file-list .list-item:last-child {
+    margin-bottom: 8px; /* Space after the list */
+    border-bottom-left-radius: 4px;
+    border-bottom-right-radius: 4px;
+}
+
+
+#file-list .list-item:hover {
+    background-color: #eef6fc; /* Light blue on hover */
+}
+
+#file-list .list-item .item-icon {
+    margin-right: 12px;
+    font-size: 1.3em; /* Adjust icon size */
+    width: 20px; /* Ensure alignment */
+    text-align: center;
+}
+
+#file-list .folder-item .item-name {
+    font-weight: bold;
+    color: #005a9e; /* Theme color for folders */
+}
+
+#file-list .file-item .item-name {
+    color: #333; /* Standard text color for files */
+}
+
+/* Basic icons using Unicode characters */
+#file-list .folder-item .item-icon::before {
+    content: "📁"; /* Folder emoji */
+    color: #0078d4; /* Color for folder icon */
+}
+
+#file-list .file-item .item-icon::before {
+    content: "📄"; /* Document emoji */
+    color: #555; /* Color for file icon */
+}
+
+/* Responsive considerations */
+@media (max-width: 600px) {
+    body {
+        padding: 10px; /* Reduce padding on small screens */
+    }
+    header {
+        padding: 10px 15px;
+    }
+    header h1 {
+        font-size: 1.5em;
+    }
+    nav#breadcrumbs {
+        padding: 10px 15px;
+        font-size: 0.9em;
+    }
+    main {
+        padding: 0 10px 10px 10px;
+    }
+    #file-list .list-item {
+        padding: 10px;
+    }
+    #file-list .list-item .item-icon {
+        font-size: 1.2em;
+        margin-right: 8px;
+    }
+}
