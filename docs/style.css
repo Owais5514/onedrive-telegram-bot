@@ -1,140 +1,265 @@
-body {
-    font-family: Arial, Helvetica, sans-serif;
-    margin: 0;
-    padding: 0; /* Changed to 0, header/main will have padding */
-    background-color: #f4f4f4;
-    color: #333;
-    line-height: 1.6;
+/* === CSS Variables === */
+:root {
+    --font-family-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+    --background-color-body: #f8f9fa; /* Lighter grey */
+    --text-color-default: #212529; /* Dark grey, almost black */
+    --text-color-muted: #6c757d; /* Medium grey */
+    --primary-color: #007bff; /* Vibrant blue */
+    --primary-color-darker: #0056b3; /* Darker blue for links/hovers */
+    --accent-color-light: #e9ecef; /* Light accent for backgrounds */
+    --border-color: #dee2e6; /* Subtle border color */
+    --item-background-color: #ffffff;
+    --item-hover-background-color: #f1f3f5; /* Slightly off-white hover */
+    --item-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    --item-hover-shadow: 0 4px 8px rgba(0,0,0,0.08);
+    --border-radius: 0.3rem;
+    --spacing-unit: 1rem; /* Approx 16px if base font-size is 16px */
 }
 
+/* === General Styles === */
+body {
+    font-family: var(--font-family-sans);
+    margin: 0;
+    padding: 0; 
+    background-color: var(--background-color-body);
+    color: var(--text-color-default);
+    line-height: 1.6;
+    font-size: 16px; /* Base font size */
+}
+
+.container {
+    max-width: 960px; /* Max width for content */
+    margin: 0 auto; /* Center content */
+    padding: 0 var(--spacing-unit);
+}
+
+/* === Header === */
 header {
-    background-color: #0078d4; /* Microsoft Blue */
+    background-color: var(--primary-color);
     color: #ffffff;
-    padding: 15px 20px;
-    text-align: center; /* Centering h1 by styling header */
+    padding: calc(var(--spacing-unit) * 1.5) var(--spacing-unit);
+    text-align: center;
+    margin-bottom: calc(var(--spacing-unit) * 1.5);
 }
 
 header h1 {
     margin: 0;
-    font-size: 1.8em;
+    font-size: 2em; /* Larger header font */
+    font-weight: 600; /* Bolder header */
 }
 
+/* === Breadcrumbs === */
 nav#breadcrumbs {
-    padding: 12px 20px;
-    background-color: #e9e9e9;
-    border-bottom: 1px solid #ccc;
-    margin-bottom: 20px;
-}
-
-nav#breadcrumbs a {
-    text-decoration: none;
-    color: #005a9e; /* Darker blue for links */
-    margin-right: 8px;
+    padding: calc(var(--spacing-unit) * 0.75) 0; /* Padding handled by .container */
+    background-color: transparent; /* Cleaner look */
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: calc(var(--spacing-unit) * 1.5);
     font-size: 0.95em;
 }
 
-nav#breadcrumbs a:hover {
+nav#breadcrumbs .container a { /* Target links within the container for breadcrumbs */
+    text-decoration: none;
+    color: var(--primary-color);
+    margin-right: calc(var(--spacing-unit) * 0.5);
+    transition: color 0.2s ease-in-out;
+}
+
+nav#breadcrumbs .container a:hover {
+    color: var(--primary-color-darker);
     text-decoration: underline;
 }
 
-nav#breadcrumbs a:last-child {
-    margin-right: 0;
-    font-weight: bold; /* Current page in breadcrumb */
-    color: #333;
+nav#breadcrumbs .container .current-breadcrumb,
+nav#breadcrumbs .container a:last-child:not([href="#"]) { /* Handle JS added current-breadcrumb or simple last-child */
+    color: var(--text-color-default);
+    font-weight: 600;
+    text-decoration: none;
 }
 
+/* === Main Content Area === */
 main {
-    padding: 0 20px 20px 20px; /* Padding for content area */
+    /* Padding handled by .container now */
 }
 
 #loading-indicator {
     text-align: center;
-    padding: 20px;
+    padding: calc(var(--spacing-unit) * 2);
     font-style: italic;
-    color: #666;
+    color: var(--text-color-muted);
     font-size: 1.1em;
 }
 
+/* === File List === */
 #file-list {
-    /* No specific styles needed for the container itself, items will be styled */
+    /* Container for list items */
 }
 
 #file-list .list-item {
-    padding: 12px 15px;
-    border: 1px solid #ddd;
-    background-color: #fff;
-    margin-bottom: -1px; /* Create a "connected" list look */
+    background-color: var(--item-background-color);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    padding: calc(var(--spacing-unit) * 0.85) calc(var(--spacing-unit) * 1.25);
+    margin-bottom: calc(var(--spacing-unit) * 0.75);
     cursor: pointer;
     display: flex;
     align-items: center;
-    transition: background-color 0.2s ease-in-out;
+    box-shadow: var(--item-shadow);
+    transition: background-color 0.2s ease-in-out, 
+                transform 0.15s ease-in-out, 
+                box-shadow 0.2s ease-in-out;
 }
-
-#file-list .list-item:first-child {
-    border-top-left-radius: 4px;
-    border-top-right-radius: 4px;
-}
-#file-list .list-item:last-child {
-    margin-bottom: 8px; /* Space after the list */
-    border-bottom-left-radius: 4px;
-    border-bottom-right-radius: 4px;
-}
-
 
 #file-list .list-item:hover {
-    background-color: #eef6fc; /* Light blue on hover */
+    background-color: var(--item-hover-background-color);
+    border-color: #c0c9d2; /* Slightly darker border on hover */
+    transform: translateY(-2px); /* Subtle lift effect */
+    box-shadow: var(--item-hover-shadow);
 }
 
 #file-list .list-item .item-icon {
-    margin-right: 12px;
-    font-size: 1.3em; /* Adjust icon size */
-    width: 20px; /* Ensure alignment */
+    margin-right: calc(var(--spacing-unit) * 0.75);
+    font-size: 1.4em; /* Slightly larger icons */
+    width: 24px; /* Ensure alignment */
     text-align: center;
+    color: var(--text-color-muted); /* Default icon color */
 }
 
 #file-list .folder-item .item-name {
-    font-weight: bold;
-    color: #005a9e; /* Theme color for folders */
+    font-weight: 500; /* Medium weight for folders */
+    color: var(--primary-color-darker);
 }
 
 #file-list .file-item .item-name {
-    color: #333; /* Standard text color for files */
+    color: var(--text-color-default);
 }
 
-/* Basic icons using Unicode characters */
+/* Icons with more distinct colors */
 #file-list .folder-item .item-icon::before {
-    content: "📁"; /* Folder emoji */
-    color: #0078d4; /* Color for folder icon */
+    content: "📁"; 
+    color: var(--primary-color); /* Use primary color for folder icons */
 }
 
 #file-list .file-item .item-icon::before {
-    content: "📄"; /* Document emoji */
-    color: #555; /* Color for file icon */
+    content: "📄"; 
+    color: var(--text-color-muted); /* Muted color for file icons */
 }
 
-/* Responsive considerations */
-@media (max-width: 600px) {
+/* === Responsive Design === */
+@media (max-width: 768px) {
     body {
-        padding: 10px; /* Reduce padding on small screens */
-    }
-    header {
-        padding: 10px 15px;
+        font-size: 15px; /* Adjust base font for tablets */
     }
     header h1 {
-        font-size: 1.5em;
+        font-size: 1.8em;
+    }
+    .container {
+        padding: 0 calc(var(--spacing-unit) * 0.75);
+    }
+}
+
+@media (max-width: 600px) {
+    body {
+        font-size: 14px; /* Adjust base font for smaller mobile */
+    }
+    header {
+        padding: var(--spacing-unit) calc(var(--spacing-unit) * 0.5);
+        margin-bottom: var(--spacing-unit);
+    }
+    header h1 {
+        font-size: 1.6em;
     }
     nav#breadcrumbs {
-        padding: 10px 15px;
+        padding: calc(var(--spacing-unit) * 0.5) 0;
+        margin-bottom: var(--spacing-unit);
         font-size: 0.9em;
     }
-    main {
-        padding: 0 10px 10px 10px;
-    }
     #file-list .list-item {
-        padding: 10px;
+        padding: calc(var(--spacing-unit) * 0.75) var(--spacing-unit);
+        margin-bottom: calc(var(--spacing-unit) * 0.5);
     }
     #file-list .list-item .item-icon {
-        font-size: 1.2em;
-        margin-right: 8px;
+        font-size: 1.3em;
+        margin-right: calc(var(--spacing-unit) * 0.5);
+    }
+}
+/* Ensure the HTML structure is updated to wrap breadcrumbs content in a .container div
+   If index.html is like:
+   <nav id="breadcrumbs">
+       <div class="container"> <!-- This div should be added for centering -->
+           <a href="#" data-path="/">Home</a>
+           <!-- other breadcrumbs -->
+       </div>
+   </nav>
+   And main content too:
+   <main>
+       <div class="container">
+            <div id="loading-indicator">...</div>
+            <div id="file-list">...</div>
+       </div>
+   </main>
+   This CSS assumes such a structure for centering. If not, the centering part of .container won't apply as expected to those sections.
+   The current subtask is CSS-only, so I won't change HTML. The max-width and centering will primarily affect overall body/page width if not applied to specific sections.
+   For now, I will apply .container styling directly to main and breadcrumbs for simplicity without HTML change.
+*/
+
+/* Applying container-like properties directly to main and breadcrumbs nav if HTML isn't changed */
+main, nav#breadcrumbs {
+    max-width: 960px;
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: var(--spacing-unit);
+    padding-right: var(--spacing-unit);
+}
+/* Specific padding adjustments for breadcrumbs as it already had padding */
+nav#breadcrumbs {
+    padding-top: calc(var(--spacing-unit) * 0.75);
+    padding-bottom: calc(var(--spacing-unit) * 0.75);
+}
+/* Specific padding adjustments for main as it already had padding */
+main {
+     padding-top: 0; /* Assuming header provides top space */
+     padding-bottom: calc(var(--spacing-unit) * 1.5);
+}
+
+/* Re-adjust breadcrumb links to not need .container prefix for this CSS-only change */
+nav#breadcrumbs a {
+    text-decoration: none;
+    color: var(--primary-color);
+    margin-right: calc(var(--spacing-unit) * 0.5);
+    transition: color 0.2s ease-in-out;
+}
+
+nav#breadcrumbs a:hover {
+    color: var(--primary-color-darker);
+    text-decoration: underline;
+}
+
+nav#breadcrumbs .current-breadcrumb,
+nav#breadcrumbs a:last-child:not([href="#"]) { 
+    color: var(--text-color-default);
+    font-weight: 600;
+    text-decoration: none;
+}
+
+/* Remove .container from responsive media query if it's not used in HTML */
+@media (max-width: 768px) {
+    /* ... other responsive styles ... */
+    main, nav#breadcrumbs {
+        padding-left: calc(var(--spacing-unit) * 0.75);
+        padding-right: calc(var(--spacing-unit) * 0.75);
+    }
+}
+
+@media (max-width: 600px) {
+    /* ... other responsive styles ... */
+    main {
+        /* main padding was 0 10px 10px 10px, now more systematic */
+        padding-left: calc(var(--spacing-unit) * 0.5);
+        padding-right: calc(var(--spacing-unit) * 0.5);
+        padding-bottom: calc(var(--spacing-unit) * 0.5);
+    }
+     nav#breadcrumbs {
+        padding-left: calc(var(--spacing-unit) * 0.5);
+        padding-right: calc(var(--spacing-unit) * 0.5);
     }
 }
