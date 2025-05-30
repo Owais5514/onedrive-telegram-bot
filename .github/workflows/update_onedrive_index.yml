@@ -1,0 +1,64 @@
+name: Update OneDrive Index
+
+on:
+  schedule:
+    # Runs daily at 02:00 UTC. Adjust as needed.
+    - cron: '0 2 * * *'
+  workflow_dispatch: # Allows manual triggering
+
+jobs:
+  update_index:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Needed to commit changes back to the repository
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10' # Specify a Python version
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Create .env file
+        run: |
+          echo "AZURE_CLIENT_ID=${{ secrets.AZURE_CLIENT_ID }}" > .env
+          echo "AZURE_CLIENT_SECRET=${{ secrets.AZURE_CLIENT_SECRET }}" >> .env
+          echo "AZURE_TENANT_ID=${{ secrets.AZURE_TENANT_ID }}" >> .env
+          # If ONEDRIVE_BASE_FOLDER or ONEDRIVE_RESTRICTED_MODE are stored as secrets, add them here:
+          # Example:
+          # if [ -n "${{ secrets.ONEDRIVE_BASE_FOLDER }}" ]; then
+          #   echo "ONEDRIVE_BASE_FOLDER=${{ secrets.ONEDRIVE_BASE_FOLDER }}" >> .env
+          # fi
+          # if [ -n "${{ secrets.ONEDRIVE_RESTRICTED_MODE }}" ]; then
+          #   echo "ONEDRIVE_RESTRICTED_MODE=${{ secrets.ONEDRIVE_RESTRICTED_MODE }}" >> .env
+          # fi
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          # ONEDRIVE_BASE_FOLDER: ${{ secrets.ONEDRIVE_BASE_FOLDER }} # Uncomment if using as secret
+          # ONEDRIVE_RESTRICTED_MODE: ${{ secrets.ONEDRIVE_RESTRICTED_MODE }} # Uncomment if using as secret
+
+      - name: Run script to generate OneDrive index
+        run: python generate_onedrive_index.py
+
+      - name: Commit and push if changes
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          # Check for changes in the target file
+          if ! git diff --quiet docs/onedrive_index.json; then
+            git add docs/onedrive_index.json
+            git commit -m "Automated update of OneDrive index (docs/onedrive_index.json)"
+            git push
+            echo "OneDrive index updated and pushed."
+          else
+            echo "No changes to OneDrive index. Nothing to commit."
+          fi

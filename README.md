@@ -144,6 +144,25 @@ The web interface allows you to:
 
 It is a read-only viewer and does not allow any modifications to your OneDrive content.
 
+### Automated Updates
+
+To keep the data for the static web interface current, a GitHub Action is set up to automatically regenerate the `docs/onedrive_index.json` file daily. This process helps ensure that the web view reflects recent changes in OneDrive.
+
+**Manual Trigger:**
+
+You can also manually trigger this update process:
+1.  Navigate to the **Actions** tab of this repository on GitHub.
+2.  Find the workflow named **"Update OneDrive Index"** in the list.
+3.  Click on the workflow, and then use the **"Run workflow"** button (this option is available because `workflow_dispatch` is enabled).
+
+**Repository Secrets:**
+
+For the GitHub Action to successfully authenticate with OneDrive and generate the index, the following secrets must be configured in your repository's settings (under `Settings > Secrets and variables > Actions`):
+*   `AZURE_CLIENT_ID`
+*   `AZURE_CLIENT_SECRET`
+*   `AZURE_TENANT_ID`
+*   Optionally, `ONEDRIVE_BASE_FOLDER` and `ONEDRIVE_RESTRICTED_MODE` if you wish to override the script's default configurations via secrets. For example, you might set `ONEDRIVE_RESTRICTED_MODE` to `false` if your `ONEDRIVE_BASE_FOLDER` is set to the root or is empty.
+
 ## Configuration
 
 The bot can be configured by modifying variables in `bot_continuous.py`:
