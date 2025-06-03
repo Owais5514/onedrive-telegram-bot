@@ -196,9 +196,13 @@ class OneDriveIndexer:
                     last_update = float(f.read().strip())
                 time_since_update = datetime.now().timestamp() - last_update
                 
-                # If index is less than 1 hour old, use cached version
-                if time_since_update < 3600:  # 1 hour
-                    logger.info(f"Using cached index (updated {time_since_update/60:.1f} minutes ago)")
+                # If index is less than 1 week old, use cached version
+                if time_since_update < 604800:  # 1 week (7 days * 24 hours * 3600 seconds)
+                    days_ago = time_since_update / 86400  # Convert to days
+                    if days_ago < 1:
+                        logger.info(f"Using cached index (updated {time_since_update/3600:.1f} hours ago)")
+                    else:
+                        logger.info(f"Using cached index (updated {days_ago:.1f} days ago)")
                     self.load_cached_index()
                     return True
             except Exception as e:
@@ -231,6 +235,32 @@ class OneDriveIndexer:
         else:
             logger.error("❌ Failed to build index")
             return False
+
+    def initialize_index(self) -> bool:
+        """Initialize index by loading cached version or building if necessary"""
+        # First try to load existing cached index
+        if os.path.exists(self.index_file) and os.path.exists(self.timestamp_file):
+            try:
+                with open(self.timestamp_file, 'r') as f:
+                    last_update = float(f.read().strip())
+                time_since_update = datetime.now().timestamp() - last_update
+                
+                # If index is less than 1 week old, just load it
+                if time_since_update < 604800:  # 1 week (7 days * 24 hours * 3600 seconds)
+                    days_ago = time_since_update / 86400  # Convert to days
+                    if days_ago < 1:
+                        logger.info(f"Loading cached index (updated {time_since_update/3600:.1f} hours ago)")
+                    else:
+                        logger.info(f"Loading cached index (updated {days_ago:.1f} days ago)")
+                    self.load_cached_index()
+                    return True
+                else:
+                    logger.info(f"Cached index is {time_since_update/86400:.1f} days old, rebuilding...")
+            except Exception as e:
+                logger.warning(f"Error reading cached index timestamp: {e}")
+        
+        # If no valid cache, build new index
+        return self.build_index()
 
     def load_cached_index(self):
         """Load cached index from file"""

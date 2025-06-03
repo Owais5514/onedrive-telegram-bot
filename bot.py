@@ -714,15 +714,15 @@ class OneDriveBot:
 
     def run(self):
         """Run the bot"""
-        # Build/load file index using indexer
+        # Initialize file index (load cached or build if necessary)
         logger.info("Initializing file index...")
         try:
-            if not self.indexer.build_index():
+            if not self.indexer.initialize_index():
                 logger.error("Failed to initialize file index")
                 return
                 
             stats = self.indexer.get_stats()
-            logger.info(f"Index loaded: {stats['total_folders']} folders, {stats['total_files']} files")
+            logger.info(f"Index ready: {stats['total_folders']} folders, {stats['total_files']} files")
         except Exception as e:
             logger.error(f"Error initializing file index: {e}")
             return
