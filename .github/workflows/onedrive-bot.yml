@@ -1,0 +1,97 @@
+name: OneDrive Telegram Bot
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'start_bot'
+        type: choice
+        options:
+          - start_bot
+          - index_files
+          - troubleshoot
+      duration:
+        description: 'Bot runtime duration (in minutes, 0 for indefinite)'
+        required: false
+        default: '60'
+        type: string
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360  # 6 hours max
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Create .env file
+      run: |
+        cat > .env << EOF
+        # Telegram Bot
+        TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
+
+        # Azure App Registration
+        AZURE_CLIENT_ID=${{ secrets.AZURE_CLIENT_ID }}
+        AZURE_CLIENT_SECRET=${{ secrets.AZURE_CLIENT_SECRET }}
+        AZURE_TENANT_ID=${{ secrets.AZURE_TENANT_ID }}
+
+        # Target OneDrive User (email or user ID to access their OneDrive)
+        TARGET_USER_ID=${{ secrets.TARGET_USER_ID }}
+
+        # Admin User ID (Telegram user ID for admin commands)
+        ADMIN_USER_ID=${{ secrets.ADMIN_USER_ID }}
+
+        # Claude AI API (Optional - for AI file search)
+        CLAUDE_API_KEY=${{ secrets.CLAUDE_API_KEY }}
+
+        # Optional: For debugging
+        DEBUG=True
+        EOF
+
+    - name: Run Bot Action
+      run: |
+        case "${{ github.event.inputs.action }}" in
+          "start_bot")
+            echo "🤖 Starting OneDrive Telegram Bot..."
+            if [ "${{ github.event.inputs.duration }}" != "0" ]; then
+              timeout "${{ github.event.inputs.duration }}m" python main.py || echo "⏰ Bot stopped after ${{ github.event.inputs.duration }} minutes"
+            else
+              python main.py
+            fi
+            ;;
+          "index_files")
+            echo "📁 Running file indexer..."
+            python indexer.py
+            ;;
+          "troubleshoot")
+            echo "🔍 Running troubleshoot script..."
+            python troubleshoot.py
+            ;;
+          *)
+            echo "❌ Unknown action: ${{ github.event.inputs.action }}"
+            exit 1
+            ;;
+        esac
+
+    - name: Upload logs (if any)
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: bot-logs-${{ github.run_number }}
+        path: |
+          *.log
+          logs/
+        retention-days: 7
