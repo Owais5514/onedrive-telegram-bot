@@ -187,5 +187,23 @@
     "query_type": "browse_folder",
     "date": "2025-06-03",
     "time": "09:00:30"
+  },
+  {
+    "timestamp": "2025-06-03T09:11:03.745840",
+    "user_id": 77777,
+    "username": "identity_test_user",
+    "query": "Test git identity fix",
+    "query_type": "ai_search",
+    "date": "2025-06-03",
+    "time": "09:11:03"
+  },
+  {
+    "timestamp": "2025-06-03T09:12:20.237600",
+    "user_id": 66666,
+    "username": "fixed_test_user",
+    "query": "Git identity should work now",
+    "query_type": "browse_folder",
+    "date": "2025-06-03",
+    "time": "09:12:20"
   }
 ]

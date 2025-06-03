@@ -46,6 +46,15 @@ The readable log uses emojis and clear formatting:
 - Git repository is auto-initialized if needed
 - Log files are force-added to bypass `.gitignore` restrictions
 
+### 🔧 **Git Identity Configuration**
+The query logger automatically configures git identity for proper commit attribution:
+- **Author:** OneDrive Bot Logger <bot@onedrive-telegram.local>
+- **Committer:** OneDrive Bot Logger <bot@onedrive-telegram.local>
+- Sets both repository-level config and environment variables
+- Ensures commits work even in containerized environments
+
+**Fixed Issue:** Previously git commits failed with "Author identity unknown" error. Now resolved with proper identity setup in both `_init_git()` and commit environment variables.
+
 ## Implementation Details
 
 ### Code Integration

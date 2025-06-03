@@ -45,9 +45,12 @@ class QueryLogger:
             if result.returncode != 0:
                 # Initialize git repo
                 subprocess.run(['git', 'init'], check=True, cwd='.')
-                subprocess.run(['git', 'config', 'user.name', 'OneDrive Bot Logger'], check=True, cwd='.')
-                subprocess.run(['git', 'config', 'user.email', 'bot@onedrive-telegram.local'], check=True, cwd='.')
-                logger.info("Initialized git repository for query logging")
+            
+            # Always ensure git user identity is set for logging commits
+            subprocess.run(['git', 'config', 'user.name', 'OneDrive Bot Logger'], check=True, cwd='.')
+            subprocess.run(['git', 'config', 'user.email', 'bot@onedrive-telegram.local'], check=True, cwd='.')
+            logger.info("Git user identity configured for query logging")
+            
         except Exception as e:
             logger.warning(f"Git initialization failed: {e}")
     
@@ -177,16 +180,25 @@ class QueryLogger:
             logs_head_result = subprocess.run(['git', 'rev-parse', 'logs'], 
                                             capture_output=True, text=True, cwd='.')
             
+            # Set git author/committer environment for commit-tree
+            git_env = os.environ.copy()
+            git_env.update({
+                'GIT_AUTHOR_NAME': 'OneDrive Bot Logger',
+                'GIT_AUTHOR_EMAIL': 'bot@onedrive-telegram.local',
+                'GIT_COMMITTER_NAME': 'OneDrive Bot Logger',
+                'GIT_COMMITTER_EMAIL': 'bot@onedrive-telegram.local'
+            })
+            
             # Create commit
             if logs_head_result.returncode == 0:
                 # Logs branch exists, commit with parent
                 logs_head = logs_head_result.stdout.strip()
                 commit_result = subprocess.run(['git', 'commit-tree', tree_hash, '-p', logs_head, '-m', commit_msg],
-                                             capture_output=True, text=True, cwd='.')
+                                             capture_output=True, text=True, env=git_env, cwd='.')
             else:
                 # First commit to logs branch
                 commit_result = subprocess.run(['git', 'commit-tree', tree_hash, '-m', commit_msg],
-                                             capture_output=True, text=True, cwd='.')
+                                             capture_output=True, text=True, env=git_env, cwd='.')
             
             if commit_result.returncode != 0:
                 raise Exception(f"Failed to create commit: {commit_result.stderr}")
