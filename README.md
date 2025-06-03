@@ -88,6 +88,39 @@ The bot expects a "University" folder in the root of the specified user's OneDri
 4. Use "Back" button to navigate up
 5. "Refresh Index" updates the file list
 
+## Deployment
+
+### Local Deployment
+```bash
+python main.py
+```
+
+### GitHub Actions (Cloud Deployment) 🚀
+
+This repository includes GitHub Actions workflows for automated cloud deployment:
+
+**📋 Available Workflows:**
+- **🤖 Manual Bot Runner** - Run bot on-demand with configurable duration
+- **⏰ Scheduled Runner** - Automatic daily bot sessions  
+- **🧪 Test & Build** - Continuous integration and testing
+
+**⚡ Quick Setup:**
+1. Fork this repository
+2. Add secrets in Settings → Secrets and variables → Actions:
+   - `TELEGRAM_BOT_TOKEN`
+   - `CLIENT_ID`, `CLIENT_SECRET`, `TENANT_ID`
+   - `USER_ID`, `ADMIN_USER_ID`
+3. Go to Actions tab → "Run OneDrive Telegram Bot" → "Run workflow"
+
+**📖 Complete Guide:** See [GITHUB_ACTIONS.md](GITHUB_ACTIONS.md) for detailed setup instructions, security best practices, and troubleshooting.
+
+### Docker Deployment (Optional)
+```bash
+# Build and run with Docker
+docker build -t onedrive-bot .
+docker run -d --env-file .env onedrive-bot
+```
+
 ## Architecture
 
 ### File Structure

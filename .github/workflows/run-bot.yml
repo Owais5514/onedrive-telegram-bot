@@ -1,0 +1,121 @@
+name: Run OneDrive Telegram Bot
+
+on:
+  # Allow manual trigger from GitHub Actions UI
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: 'How long to run the bot (in minutes)'
+        required: false
+        default: '60'
+        type: string
+      force_refresh:
+        description: 'Force refresh the OneDrive index'
+        required: false
+        default: false
+        type: boolean
+
+  # Optional: Run on schedule (uncomment and modify as needed)
+  # schedule:
+  #   - cron: '0 9 * * *'  # Run daily at 9 AM UTC
+
+  # Optional: Run on push to main branch (uncomment if needed)
+  # push:
+  #   branches: [ main ]
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180  # 3 hours maximum
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Create environment file
+      run: |
+        echo "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}" >> .env
+        echo "CLIENT_ID=${{ secrets.CLIENT_ID }}" >> .env
+        echo "CLIENT_SECRET=${{ secrets.CLIENT_SECRET }}" >> .env
+        echo "TENANT_ID=${{ secrets.TENANT_ID }}" >> .env
+        echo "USER_ID=${{ secrets.USER_ID }}" >> .env
+        echo "ADMIN_USER_ID=${{ secrets.ADMIN_USER_ID }}" >> .env
+
+    - name: Test indexer connection
+      run: |
+        echo "Testing OneDrive connection..."
+        python indexer.py --stats
+      continue-on-error: true
+
+    - name: Force refresh index (if requested)
+      if: ${{ github.event.inputs.force_refresh == 'true' }}
+      run: |
+        echo "Force refreshing OneDrive index..."
+        python indexer.py --force
+
+    - name: Run diagnostics
+      run: |
+        echo "Running bot diagnostics..."
+        python troubleshoot.py
+      continue-on-error: true
+
+    - name: Start Telegram Bot
+      timeout-minutes: ${{ fromJSON(github.event.inputs.duration || '60') }}
+      env:
+        BOT_RUNTIME_MINUTES: ${{ github.event.inputs.duration || '60' }}
+      run: |
+        echo "Starting Telegram Bot for ${{ github.event.inputs.duration || '60' }} minutes..."
+        echo "Bot will automatically stop after the timeout period."
+        python github_runner.py
+      continue-on-error: true
+
+    - name: Upload logs (if any)
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: bot-logs-${{ github.run_number }}
+        path: |
+          *.log
+          *.json
+          !.env
+        retention-days: 7
+        if-no-files-found: ignore
+
+    - name: Cleanup sensitive files
+      if: always()
+      run: |
+        rm -f .env
+        rm -f *.log
+        echo "Cleanup completed"
+
+    - name: Bot Status Summary
+      if: always()
+      run: |
+        echo "## Bot Execution Summary" >> $GITHUB_STEP_SUMMARY
+        echo "- **Duration**: ${{ github.event.inputs.duration || '60' }} minutes" >> $GITHUB_STEP_SUMMARY
+        echo "- **Force Refresh**: ${{ github.event.inputs.force_refresh || 'false' }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Run ID**: ${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Timestamp**: $(date -u)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+        echo "- Check the logs in the Actions tab for any issues" >> $GITHUB_STEP_SUMMARY
+        echo "- Download artifacts if you need to review log files" >> $GITHUB_STEP_SUMMARY
+        echo "- The bot has been automatically stopped" >> $GITHUB_STEP_SUMMARY

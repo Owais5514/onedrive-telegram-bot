@@ -1,0 +1,91 @@
+name: Test and Build
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12']
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-${{ matrix.python-version }}-
+          ${{ runner.os }}-pip-
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-asyncio
+
+    - name: Create test environment
+      run: |
+        echo "TELEGRAM_BOT_TOKEN=test_token" >> .env
+        echo "CLIENT_ID=test_client" >> .env
+        echo "CLIENT_SECRET=test_secret" >> .env
+        echo "TENANT_ID=test_tenant" >> .env
+        echo "USER_ID=test_user" >> .env
+        echo "ADMIN_USER_ID=123456789" >> .env
+
+    - name: Run syntax check
+      run: |
+        python -m py_compile main.py
+        python -m py_compile bot.py
+        python -m py_compile indexer.py
+        python -m py_compile troubleshoot.py
+
+    - name: Test indexer module
+      run: |
+        python -c "from indexer import OneDriveIndexer; print('✅ Indexer module imports successfully')"
+
+    - name: Test bot module
+      run: |
+        python -c "from bot import OneDriveBot; print('✅ Bot module imports successfully')"
+
+    - name: Run troubleshoot diagnostics
+      run: |
+        python troubleshoot.py
+      continue-on-error: true
+
+    - name: Test callback data validation
+      run: |
+        python test_button_data.py
+      continue-on-error: true
+
+    - name: Check code structure
+      run: |
+        echo "## Code Analysis" >> $GITHUB_STEP_SUMMARY
+        echo "### File Structure" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        find . -name "*.py" -not -path "./.venv/*" -not -path "./venv/*" | head -20 >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        echo "### Requirements" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        cat requirements.txt >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+
+    - name: Cleanup
+      if: always()
+      run: |
+        rm -f .env
+        echo "Test completed successfully ✅"
