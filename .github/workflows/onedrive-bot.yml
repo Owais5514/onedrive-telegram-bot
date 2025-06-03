@@ -23,10 +23,16 @@ jobs:
   run-bot:
     runs-on: ubuntu-latest
     timeout-minutes: 360  # 6 hours max
+    permissions:
+      contents: write  # Allow pushing commits and branches
+      actions: read    # Allow reading workflow context
     
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Full history for branch operations
+        token: ${{ secrets.GITHUB_TOKEN }}  # Ensure push permissions
 
     - name: Set up Python
       uses: actions/setup-python@v4
@@ -121,12 +127,91 @@ jobs:
             ;;
         esac
 
-    - name: Upload logs (if any)
+    - name: Configure Git for Log Commits
+      if: always()
+      run: |
+        # Configure git identity for automated commits
+        git config --global user.name "GitHub Actions Bot"
+        git config --global user.email "actions@github.com"
+        
+        # Set environment variables for commit operations
+        export GIT_AUTHOR_NAME="GitHub Actions Bot"
+        export GIT_AUTHOR_EMAIL="actions@github.com"
+        export GIT_COMMITTER_NAME="GitHub Actions Bot"
+        export GIT_COMMITTER_EMAIL="actions@github.com"
+
+    - name: Commit and Push logs (if any)
+      if: always()
+      run: |
+        # Check if any log files exist
+        if ls *.log *.json 2>/dev/null || [ -d "logs" ]; then
+          echo "📝 Log files found, committing to logs branch..."
+          
+          # Get the current commit hash for reference
+          MAIN_COMMIT=$(git rev-parse HEAD)
+          echo "📍 Main branch commit: $MAIN_COMMIT"
+          
+          # Ensure we're on main branch
+          git checkout main 2>/dev/null || git checkout -b main
+          
+          # Force add all log files (bypassing .gitignore)
+          git add -f *.log *.json logs/ 2>/dev/null || true
+          
+          # Check if there are any changes to commit
+          if git diff --cached --quiet; then
+            echo "ℹ️ No log changes to commit"
+          else
+            # Create commit message with timestamp and run info
+            TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
+            COMMIT_MSG="Bot logs from GitHub Actions run ${{ github.run_number }} - $TIMESTAMP"
+            
+            # Fetch remote logs branch if it exists
+            git fetch origin logs:logs 2>/dev/null || true
+            
+            # Get or create logs branch
+            if git show-ref --verify --quiet refs/heads/logs; then
+              echo "📋 Using existing logs branch"
+              LOGS_EXISTS=true
+            else
+              echo "🆕 Creating new logs branch"
+              LOGS_EXISTS=false
+            fi
+            
+            # Commit to logs branch using commit-tree (preserves main branch checkout)
+            TREE_HASH=$(git write-tree)
+            if [ "$LOGS_EXISTS" = "true" ]; then
+              PARENT_COMMIT=$(git rev-parse logs)
+              COMMIT_HASH=$(git commit-tree $TREE_HASH -p $PARENT_COMMIT -m "$COMMIT_MSG")
+            else
+              COMMIT_HASH=$(git commit-tree $TREE_HASH -m "$COMMIT_MSG (initial logs commit)")
+            fi
+            
+            # Update logs branch reference
+            git update-ref refs/heads/logs $COMMIT_HASH
+            
+            echo "✅ Logs committed to logs branch: $COMMIT_HASH"
+            
+            # Push logs branch to remote
+            echo "📤 Pushing logs branch to remote..."
+            if git push origin logs 2>/dev/null; then
+              echo "✅ Logs successfully pushed to remote repository"
+            else
+              echo "🔄 Force pushing logs branch..."
+              git push origin logs --force
+              echo "✅ Logs force-pushed to remote repository"
+            fi
+          fi
+        else
+          echo "ℹ️ No log files found to commit"
+        fi
+
+    - name: Upload logs as artifacts (backup)
       uses: actions/upload-artifact@v4
       if: always()
       with:
         name: bot-logs-${{ github.run_number }}
         path: |
           *.log
+          *.json
           logs/
         retention-days: 7

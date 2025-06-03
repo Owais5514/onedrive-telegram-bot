@@ -46,14 +46,34 @@ The readable log uses emojis and clear formatting:
 - Git repository is auto-initialized if needed
 - Log files are force-added to bypass `.gitignore` restrictions
 
+### 🤖 **GitHub Actions Integration**
+The GitHub Actions workflow has been enhanced to properly handle log commits:
+
+1. **Permissions:** Workflow has `contents: write` permission to push branches
+2. **Git Configuration:** Automated git identity setup for GitHub Actions Bot
+3. **Log Branch Management:** 
+   - Fetches existing logs branch from remote
+   - Creates logs branch if it doesn't exist
+   - Uses `commit-tree` for efficient commits without branch switching
+4. **Remote Push:** Automatically pushes logs branch after bot execution
+5. **Fallback Handling:** Force push capability if standard push fails
+6. **Artifact Backup:** Logs are also uploaded as GitHub Actions artifacts
+
+**Workflow Steps:**
+```yaml
+- name: Configure Git for Log Commits
+- name: Commit and Push logs (if any)  
+- name: Upload logs as artifacts (backup)
+```
+
 ### 🔧 **Git Identity Configuration**
 The query logger automatically configures git identity for proper commit attribution:
-- **Author:** OneDrive Bot Logger <bot@onedrive-telegram.local>
-- **Committer:** OneDrive Bot Logger <bot@onedrive-telegram.local>
+- **Local/Development:** OneDrive Bot Logger <bot@onedrive-telegram.local>
+- **GitHub Actions:** GitHub Actions Bot <actions@github.com>
 - Sets both repository-level config and environment variables
 - Ensures commits work even in containerized environments
 
-**Fixed Issue:** Previously git commits failed with "Author identity unknown" error. Now resolved with proper identity setup in both `_init_git()` and commit environment variables.
+**Fixed Issue:** Previously git commits failed with "Author identity unknown" error. Now resolved with proper identity setup in both `_init_git()` and commit environment variables, plus GitHub Actions workflow configuration.
 
 ## Implementation Details
 
@@ -134,3 +154,42 @@ The query logger is now actively logging all user interactions in both AI search
 - No `git checkout` commands that could disrupt bot operation
 
 **Production Status:** The query logger is now fully operational and providing valuable insights into how users interact with both the AI search and browse files features of the bot!
+
+## Verification and Testing
+
+### 🧪 **Local Testing**
+To verify logging works locally:
+
+```bash
+# Run a simple test
+python test_query_logger.py
+
+# Check log files were created
+ls -la *.log *.json
+
+# Verify git commits to logs branch
+git log --oneline logs
+```
+
+### 🤖 **GitHub Actions Verification**
+To verify the workflow pushes logs properly:
+
+1. **Trigger the workflow** via GitHub Actions UI
+2. **Check the logs** in the workflow output for:
+   - "📝 Log files found, committing to logs branch..."
+   - "✅ Logs committed to logs branch: [commit-hash]"
+   - "✅ Logs successfully pushed to remote repository"
+3. **Verify the logs branch** was updated on GitHub:
+   - Go to repository → Branches → logs branch
+   - Check recent commits contain bot logs
+
+### 📊 **Monitoring**
+Monitor these indicators for healthy logging:
+
+- Log files exist and grow over time
+- Git commits appear regularly in logs branch
+- No "Author identity unknown" errors
+- GitHub Actions shows successful pushes
+- Both `.log` and `.json` files are updated simultaneously
+
+## Benefits
