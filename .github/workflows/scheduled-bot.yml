@@ -37,14 +37,65 @@ jobs:
 
     - name: Create environment file
       run: |
+        echo "Creating environment file with secrets..."
         echo "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}" >> .env
         echo "CLIENT_ID=${{ secrets.CLIENT_ID }}" >> .env
         echo "CLIENT_SECRET=${{ secrets.CLIENT_SECRET }}" >> .env
         echo "TENANT_ID=${{ secrets.TENANT_ID }}" >> .env
         echo "USER_ID=${{ secrets.USER_ID }}" >> .env
         echo "ADMIN_USER_ID=${{ secrets.ADMIN_USER_ID }}" >> .env
+        echo "Environment file created successfully"
+
+    - name: Verify environment configuration
+      run: |
+        echo "Verifying environment variables are set..."
+        if [ -z "${{ secrets.TELEGRAM_BOT_TOKEN }}" ]; then
+          echo "❌ ERROR: TELEGRAM_BOT_TOKEN secret is not set"
+          exit 1
+        fi
+        if [ -z "${{ secrets.CLIENT_ID }}" ]; then
+          echo "❌ ERROR: CLIENT_ID secret is not set"
+          exit 1
+        fi
+        if [ -z "${{ secrets.CLIENT_SECRET }}" ]; then
+          echo "❌ ERROR: CLIENT_SECRET secret is not set"
+          exit 1
+        fi
+        if [ -z "${{ secrets.TENANT_ID }}" ]; then
+          echo "❌ ERROR: TENANT_ID secret is not set"
+          echo "Please ensure TENANT_ID is configured in repository secrets"
+          exit 1
+        fi
+        if [ -z "${{ secrets.USER_ID }}" ]; then
+          echo "❌ ERROR: USER_ID secret is not set"
+          exit 1
+        fi
+        if [ -z "${{ secrets.ADMIN_USER_ID }}" ]; then
+          echo "❌ ERROR: ADMIN_USER_ID secret is not set"
+          exit 1
+        fi
+        echo "✅ All required secrets are configured"
+
+    - name: Debug environment variables
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        CLIENT_ID: ${{ secrets.CLIENT_ID }}
+        CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
+        TENANT_ID: ${{ secrets.TENANT_ID }}
+        USER_ID: ${{ secrets.USER_ID }}
+        ADMIN_USER_ID: ${{ secrets.ADMIN_USER_ID }}
+      run: |
+        echo "Running environment debug script..."
+        python debug_env.py
 
     - name: Update index if needed
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        CLIENT_ID: ${{ secrets.CLIENT_ID }}
+        CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
+        TENANT_ID: ${{ secrets.TENANT_ID }}
+        USER_ID: ${{ secrets.USER_ID }}
+        ADMIN_USER_ID: ${{ secrets.ADMIN_USER_ID }}
       run: |
         echo "Checking if index needs update..."
         python indexer.py --stats
@@ -53,6 +104,12 @@ jobs:
       timeout-minutes: ${{ fromJSON(github.event.inputs.schedule_duration || '120') }}
       env:
         BOT_RUNTIME_MINUTES: ${{ github.event.inputs.schedule_duration || '120' }}
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        CLIENT_ID: ${{ secrets.CLIENT_ID }}
+        CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
+        TENANT_ID: ${{ secrets.TENANT_ID }}
+        USER_ID: ${{ secrets.USER_ID }}
+        ADMIN_USER_ID: ${{ secrets.ADMIN_USER_ID }}
       run: |
         echo "Starting scheduled bot session..."
         python github_runner.py

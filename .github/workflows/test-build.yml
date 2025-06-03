@@ -47,27 +47,68 @@ jobs:
         echo "USER_ID=test_user" >> .env
         echo "ADMIN_USER_ID=123456789" >> .env
 
+    - name: Test environment debug script
+      env:
+        TELEGRAM_BOT_TOKEN: test_token
+        CLIENT_ID: test_client
+        CLIENT_SECRET: test_secret
+        TENANT_ID: test_tenant
+        USER_ID: test_user
+        ADMIN_USER_ID: 123456789
+      run: |
+        python debug_env.py
+      continue-on-error: true
+
     - name: Run syntax check
       run: |
         python -m py_compile main.py
         python -m py_compile bot.py
         python -m py_compile indexer.py
         python -m py_compile troubleshoot.py
+        python -m py_compile debug_env.py
 
     - name: Test indexer module
+      env:
+        TELEGRAM_BOT_TOKEN: test_token
+        CLIENT_ID: test_client
+        CLIENT_SECRET: test_secret
+        TENANT_ID: test_tenant
+        USER_ID: test_user
+        ADMIN_USER_ID: 123456789
       run: |
         python -c "from indexer import OneDriveIndexer; print('✅ Indexer module imports successfully')"
 
     - name: Test bot module
+      env:
+        TELEGRAM_BOT_TOKEN: test_token
+        CLIENT_ID: test_client
+        CLIENT_SECRET: test_secret
+        TENANT_ID: test_tenant
+        USER_ID: test_user
+        ADMIN_USER_ID: 123456789
       run: |
         python -c "from bot import OneDriveBot; print('✅ Bot module imports successfully')"
 
     - name: Run troubleshoot diagnostics
+      env:
+        TELEGRAM_BOT_TOKEN: test_token
+        CLIENT_ID: test_client
+        CLIENT_SECRET: test_secret
+        TENANT_ID: test_tenant
+        USER_ID: test_user
+        ADMIN_USER_ID: 123456789
       run: |
         python troubleshoot.py
       continue-on-error: true
 
     - name: Test callback data validation
+      env:
+        TELEGRAM_BOT_TOKEN: test_token
+        CLIENT_ID: test_client
+        CLIENT_SECRET: test_secret
+        TENANT_ID: test_tenant
+        USER_ID: test_user
+        ADMIN_USER_ID: 123456789
       run: |
         python test_button_data.py
       continue-on-error: true

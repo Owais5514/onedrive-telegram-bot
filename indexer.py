@@ -27,17 +27,41 @@ logger = logging.getLogger(__name__)
 class OneDriveIndexer:
     def __init__(self):
         """Initialize the OneDrive indexer with Azure credentials"""
-        self.client_id = os.getenv('AZURE_CLIENT_ID')
-        self.client_secret = os.getenv('AZURE_CLIENT_SECRET') 
-        self.tenant_id = os.getenv('AZURE_TENANT_ID')
-        self.target_user_id = os.getenv('TARGET_USER_ID', 'owais5514@0s7s6.onmicrosoft.com')
+        # Load environment variables (support both naming conventions)
+        self.client_id = os.getenv('CLIENT_ID') or os.getenv('AZURE_CLIENT_ID')
+        self.client_secret = os.getenv('CLIENT_SECRET') or os.getenv('AZURE_CLIENT_SECRET')
+        self.tenant_id = os.getenv('TENANT_ID') or os.getenv('AZURE_TENANT_ID')
+        self.target_user_id = os.getenv('USER_ID') or os.getenv('TARGET_USER_ID', 'owais5514@0s7s6.onmicrosoft.com')
+        
+        # Validate required environment variables
+        missing_vars = []
+        if not self.client_id:
+            missing_vars.append('CLIENT_ID (or AZURE_CLIENT_ID)')
+        if not self.client_secret:
+            missing_vars.append('CLIENT_SECRET (or AZURE_CLIENT_SECRET)')
+        if not self.tenant_id:
+            missing_vars.append('TENANT_ID (or AZURE_TENANT_ID)')
+        if not self.target_user_id:
+            missing_vars.append('USER_ID (or TARGET_USER_ID)')
+            
+        if missing_vars:
+            logger.error(f"❌ Missing required environment variables: {', '.join(missing_vars)}")
+            logger.error("Please ensure these are set in your .env file or environment")
+            raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
+        
+        logger.info(f"Initializing OneDrive indexer for user: {self.target_user_id}")
+        logger.info(f"Using tenant: {self.tenant_id}")
         
         # Initialize MSAL app
-        self.app = msal.ConfidentialClientApplication(
-            self.client_id,
-            authority=f"https://login.microsoftonline.com/{self.tenant_id}",
-            client_credential=self.client_secret
-        )
+        try:
+            self.app = msal.ConfidentialClientApplication(
+                self.client_id,
+                authority=f"https://login.microsoftonline.com/{self.tenant_id}",
+                client_credential=self.client_secret
+            )
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize MSAL application: {e}")
+            raise
         
         # File paths
         self.index_file = 'file_index.json'

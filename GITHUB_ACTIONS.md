@@ -158,6 +158,10 @@ retention-days: 14  # Keep logs for 2 weeks
    - Verify Telegram bot token is valid
    - Check bot is not running elsewhere simultaneously
 
+5. **"Missing download info for actions/..." (FIXED)**
+   - All GitHub Actions have been updated to latest stable versions
+   - `actions/upload-artifact@v4`, `actions/setup-python@v5`, `actions/cache@v4`
+
 ### Getting Help
 
 1. Check the Actions logs for detailed error messages
