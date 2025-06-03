@@ -41,19 +41,20 @@ jobs:
     - name: Create test environment
       run: |
         echo "TELEGRAM_BOT_TOKEN=test_token" >> .env
-        echo "CLIENT_ID=test_client" >> .env
-        echo "CLIENT_SECRET=test_secret" >> .env
-        echo "TENANT_ID=test_tenant" >> .env
-        echo "USER_ID=test_user" >> .env
+        echo "AZURE_CLIENT_ID=test_client" >> .env
+        echo "AZURE_CLIENT_SECRET=test_secret" >> .env
+        echo "AZURE_TENANT_ID=test_tenant" >> .env
+        echo "TARGET_USER_ID=test_user@domain.com" >> .env
         echo "ADMIN_USER_ID=123456789" >> .env
+        echo "DEBUG=True" >> .env
 
     - name: Test environment debug script
       env:
         TELEGRAM_BOT_TOKEN: test_token
-        CLIENT_ID: test_client
-        CLIENT_SECRET: test_secret
-        TENANT_ID: test_tenant
-        USER_ID: test_user
+        AZURE_CLIENT_ID: test_client
+        AZURE_CLIENT_SECRET: test_secret
+        AZURE_TENANT_ID: test_tenant
+        TARGET_USER_ID: test_user@domain.com
         ADMIN_USER_ID: 123456789
       run: |
         python debug_env.py
@@ -70,10 +71,10 @@ jobs:
     - name: Test indexer module
       env:
         TELEGRAM_BOT_TOKEN: test_token
-        CLIENT_ID: test_client
-        CLIENT_SECRET: test_secret
-        TENANT_ID: test_tenant
-        USER_ID: test_user
+        AZURE_CLIENT_ID: test_client
+        AZURE_CLIENT_SECRET: test_secret
+        AZURE_TENANT_ID: test_tenant
+        TARGET_USER_ID: test_user@domain.com
         ADMIN_USER_ID: 123456789
       run: |
         python -c "from indexer import OneDriveIndexer; print('✅ Indexer module imports successfully')"
@@ -81,10 +82,10 @@ jobs:
     - name: Test bot module
       env:
         TELEGRAM_BOT_TOKEN: test_token
-        CLIENT_ID: test_client
-        CLIENT_SECRET: test_secret
-        TENANT_ID: test_tenant
-        USER_ID: test_user
+        AZURE_CLIENT_ID: test_client
+        AZURE_CLIENT_SECRET: test_secret
+        AZURE_TENANT_ID: test_tenant
+        TARGET_USER_ID: test_user@domain.com
         ADMIN_USER_ID: 123456789
       run: |
         python -c "from bot import OneDriveBot; print('✅ Bot module imports successfully')"
@@ -92,10 +93,10 @@ jobs:
     - name: Run troubleshoot diagnostics
       env:
         TELEGRAM_BOT_TOKEN: test_token
-        CLIENT_ID: test_client
-        CLIENT_SECRET: test_secret
-        TENANT_ID: test_tenant
-        USER_ID: test_user
+        AZURE_CLIENT_ID: test_client
+        AZURE_CLIENT_SECRET: test_secret
+        AZURE_TENANT_ID: test_tenant
+        TARGET_USER_ID: test_user@domain.com
         ADMIN_USER_ID: 123456789
       run: |
         python troubleshoot.py
@@ -104,10 +105,10 @@ jobs:
     - name: Test callback data validation
       env:
         TELEGRAM_BOT_TOKEN: test_token
-        CLIENT_ID: test_client
-        CLIENT_SECRET: test_secret
-        TENANT_ID: test_tenant
-        USER_ID: test_user
+        AZURE_CLIENT_ID: test_client
+        AZURE_CLIENT_SECRET: test_secret
+        AZURE_TENANT_ID: test_tenant
+        TARGET_USER_ID: test_user@domain.com
         ADMIN_USER_ID: 123456789
       run: |
         python test_button_data.py

@@ -54,19 +54,13 @@ jobs:
       run: |
         echo "Creating environment file with secrets..."
         echo "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}" >> .env
-        echo "CLIENT_ID=${{ secrets.CLIENT_ID }}" >> .env
-        echo "CLIENT_SECRET=${{ secrets.CLIENT_SECRET }}" >> .env
-        echo "TENANT_ID=${{ secrets.TENANT_ID }}" >> .env
-        echo "USER_ID=${{ secrets.USER_ID }}" >> .env
+        echo "AZURE_CLIENT_ID=${{ secrets.AZURE_CLIENT_ID }}" >> .env
+        echo "AZURE_CLIENT_SECRET=${{ secrets.AZURE_CLIENT_SECRET }}" >> .env
+        echo "AZURE_TENANT_ID=${{ secrets.AZURE_TENANT_ID }}" >> .env
+        echo "TARGET_USER_ID=${{ secrets.TARGET_USER_ID }}" >> .env
         echo "ADMIN_USER_ID=${{ secrets.ADMIN_USER_ID }}" >> .env
+        echo "DEBUG=True" >> .env
         echo "Environment file created successfully"
-        echo "Contents of .env file (without sensitive values):"
-        echo "TELEGRAM_BOT_TOKEN=***"
-        echo "CLIENT_ID=***"
-        echo "CLIENT_SECRET=***"
-        echo "TENANT_ID=***"
-        echo "USER_ID=${{ secrets.USER_ID }}"
-        echo "ADMIN_USER_ID=${{ secrets.ADMIN_USER_ID }}"
 
     - name: Verify environment configuration
       run: |
@@ -75,17 +69,35 @@ jobs:
           echo "❌ ERROR: TELEGRAM_BOT_TOKEN secret is not set"
           exit 1
         fi
-        if [ -z "${{ secrets.CLIENT_ID }}" ]; then
-          echo "❌ ERROR: CLIENT_ID secret is not set"
+        if [ -z "${{ secrets.AZURE_CLIENT_ID }}" ]; then
+          echo "❌ ERROR: AZURE_CLIENT_ID secret is not set"
           exit 1
         fi
-        if [ -z "${{ secrets.CLIENT_SECRET }}" ]; then
-          echo "❌ ERROR: CLIENT_SECRET secret is not set"
+        if [ -z "${{ secrets.AZURE_CLIENT_SECRET }}" ]; then
+          echo "❌ ERROR: AZURE_CLIENT_SECRET secret is not set"
           exit 1
         fi
-        if [ -z "${{ secrets.TENANT_ID }}" ]; then
-          echo "❌ ERROR: TENANT_ID secret is not set"
-          echo "Please ensure TENANT_ID is configured in repository secrets"
+        if [ -z "${{ secrets.AZURE_TENANT_ID }}" ]; then
+          echo "❌ ERROR: AZURE_TENANT_ID secret is not set"
+          exit 1
+        fi
+        if [ -z "${{ secrets.TARGET_USER_ID }}" ]; then
+          echo "❌ ERROR: TARGET_USER_ID secret is not set"
+          exit 1
+        fi
+        if [ -z "${{ secrets.ADMIN_USER_ID }}" ]; then
+          echo "❌ ERROR: ADMIN_USER_ID secret is not set"
+          exit 1
+        fi
+        echo "✅ All required secrets are configured"
+        fi
+        if [ -z "${{ secrets.AZURE_CLIENT_SECRET }}" ]; then
+          echo "❌ ERROR: AZURE_CLIENT_SECRET secret is not set"
+          exit 1
+        fi
+        if [ -z "${{ secrets.AZURE_TENANT_ID }}" ]; then
+          echo "❌ ERROR: AZURE_TENANT_ID secret is not set"
+          echo "Please ensure AZURE_TENANT_ID is configured in repository secrets"
           exit 1
         fi
         if [ -z "${{ secrets.USER_ID }}" ]; then
@@ -101,10 +113,10 @@ jobs:
     - name: Debug environment variables
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        CLIENT_ID: ${{ secrets.CLIENT_ID }}
-        CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
-        TENANT_ID: ${{ secrets.TENANT_ID }}
-        USER_ID: ${{ secrets.USER_ID }}
+        AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        TARGET_USER_ID: ${{ secrets.TARGET_USER_ID }}
         ADMIN_USER_ID: ${{ secrets.ADMIN_USER_ID }}
       run: |
         echo "Running environment debug script..."
@@ -113,10 +125,10 @@ jobs:
     - name: Test indexer connection
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        CLIENT_ID: ${{ secrets.CLIENT_ID }}
-        CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
-        TENANT_ID: ${{ secrets.TENANT_ID }}
-        USER_ID: ${{ secrets.USER_ID }}
+        AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        TARGET_USER_ID: ${{ secrets.TARGET_USER_ID }}
         ADMIN_USER_ID: ${{ secrets.ADMIN_USER_ID }}
       run: |
         echo "Testing OneDrive connection..."
@@ -127,10 +139,10 @@ jobs:
       if: ${{ github.event.inputs.force_refresh == 'true' }}
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        CLIENT_ID: ${{ secrets.CLIENT_ID }}
-        CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
-        TENANT_ID: ${{ secrets.TENANT_ID }}
-        USER_ID: ${{ secrets.USER_ID }}
+        AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        TARGET_USER_ID: ${{ secrets.TARGET_USER_ID }}
         ADMIN_USER_ID: ${{ secrets.ADMIN_USER_ID }}
       run: |
         echo "Force refreshing OneDrive index..."
@@ -139,10 +151,10 @@ jobs:
     - name: Run diagnostics
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        CLIENT_ID: ${{ secrets.CLIENT_ID }}
-        CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
-        TENANT_ID: ${{ secrets.TENANT_ID }}
-        USER_ID: ${{ secrets.USER_ID }}
+        AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        TARGET_USER_ID: ${{ secrets.TARGET_USER_ID }}
         ADMIN_USER_ID: ${{ secrets.ADMIN_USER_ID }}
       run: |
         echo "Running bot diagnostics..."
@@ -154,10 +166,10 @@ jobs:
       env:
         BOT_RUNTIME_MINUTES: ${{ github.event.inputs.duration || '60' }}
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        CLIENT_ID: ${{ secrets.CLIENT_ID }}
-        CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
-        TENANT_ID: ${{ secrets.TENANT_ID }}
-        USER_ID: ${{ secrets.USER_ID }}
+        AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        TARGET_USER_ID: ${{ secrets.TARGET_USER_ID }}
         ADMIN_USER_ID: ${{ secrets.ADMIN_USER_ID }}
       run: |
         echo "Starting Telegram Bot for ${{ github.event.inputs.duration || '60' }} minutes..."
