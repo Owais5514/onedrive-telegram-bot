@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Document
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 from indexer import OneDriveIndexer
 
 # Load environment variables
@@ -19,6 +19,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Try to import AI handler (optional)
+try:
+    from ai_handler import AIHandler
+    AI_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"AI features not available: {e}")
+    AI_AVAILABLE = False
+    AIHandler = None
+
 class OneDriveBot:
     def __init__(self):
         self.token = os.getenv('TELEGRAM_BOT_TOKEN')
@@ -26,6 +35,18 @@ class OneDriveBot:
         
         # Initialize OneDrive indexer
         self.indexer = OneDriveIndexer()
+        
+        # Initialize AI handler (optional)
+        self.ai_handler = None
+        if AI_AVAILABLE:
+            try:
+                self.ai_handler = AIHandler()
+                # Start loading model in background
+                self.ai_handler.start_background_loading()
+                logger.info("AI handler initialized - model loading in background")
+            except Exception as e:
+                logger.warning(f"Failed to initialize AI handler: {e}")
+                self.ai_handler = None
         
         # Callback data mapping to handle long file names (max 64 bytes for Telegram)
         self.callback_map = {}
@@ -39,6 +60,9 @@ class OneDriveBot:
         
         # Shutdown flag
         self.shutdown_requested = False
+        
+        # AI search state
+        self.waiting_for_ai_query = set()  # Track users waiting to input AI search query
         
         # Load data
         self.load_data()
@@ -131,6 +155,10 @@ class OneDriveBot:
         keyboard = [
             [InlineKeyboardButton("📁 Browse Files", callback_data="browse_root")]
         ]
+        
+        # Add AI search button if available
+        if self.ai_handler:
+            keyboard.append([InlineKeyboardButton("🤖 AI Search", callback_data="ai_search")])
         
         # Add refresh index button only for admin
         if update.effective_user.id == self.admin_id:
@@ -253,6 +281,8 @@ class OneDriveBot:
         
         if data == "browse_root":
             await self.show_folder_contents(query, "root")
+        elif data == "ai_search":
+            await self.handle_ai_search_button(query)
         elif data == "refresh_index":
             await self.refresh_index(query)
         elif data == "main_menu":
@@ -279,6 +309,162 @@ class OneDriveBot:
             await self.show_folder_contents(query, path)
         elif data.startswith("admin_"):
             await self.handle_admin_action(query, data[6:])
+
+    async def handle_ai_search_button(self, query):
+        """Handle AI search button click"""
+        if not self.ai_handler:
+            await query.edit_message_text(
+                "❌ AI search is not available.\n"
+                "Please contact admin to enable AI features."
+            )
+            return
+        
+        # Add user to waiting list
+        user_id = query.from_user.id
+        self.waiting_for_ai_query.add(user_id)
+        
+        # Check model status for user feedback
+        status_text = ""
+        if self.ai_handler.is_model_ready():
+            status_text = "🤖 AI model is ready for advanced search!\n\n"
+        elif self.ai_handler.is_loading():
+            status_text = "🔄 AI model is loading in background...\n(Search will use smart fallback for now)\n\n"
+        else:
+            status_text = "⚠️ AI model not loaded, using smart keyword extraction\n\n"
+        
+        await query.edit_message_text(
+            f"{status_text}"
+            "Please type your search query in natural language.\n\n"
+            "Examples:\n"
+            "• \"Find math lectures from week 3\"\n"
+            "• \"EEE2203 assignment solutions\"\n"
+            "• \"CE1201 lab reports\"\n"
+            "• \"Physics quiz questions\"\n\n"
+            "Type your search query now:"
+        )
+
+    async def handle_ai_search_query(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle AI search text messages"""
+        user_id = update.effective_user.id
+        
+        # Check if user is waiting for AI query
+        if user_id not in self.waiting_for_ai_query:
+            return  # Not waiting for AI query, let other handlers process
+        
+        # Remove user from waiting list
+        self.waiting_for_ai_query.discard(user_id)
+        
+        if not self.ai_handler:
+            await update.message.reply_text(
+                "❌ AI search is not available.\n"
+                "Please contact admin to enable AI features."
+            )
+            return
+        
+        user_query = update.message.text.strip()
+        
+        # Send processing message
+        processing_msg = await update.message.reply_text("🤖 Processing your query with AI...")
+        
+        try:
+            # Process with AI
+            keywords, explanation = self.ai_handler.process_ai_search(user_query)
+            
+            # Search files using generated keywords
+            search_results = self.search_files_by_keywords(keywords)
+            
+            # Format results
+            if search_results:
+                results_text = f"{explanation}\n\n📁 Search Results ({len(search_results)} found):\n\n"
+                
+                for i, result in enumerate(search_results[:10], 1):  # Limit to 10 results
+                    size_mb = result['size'] / (1024 * 1024) if result['size'] > 0 else 0
+                    results_text += f"{i}. 📄 {result['name']}\n"
+                    results_text += f"   📂 Path: {result['path']}\n"
+                    results_text += f"   💾 Size: {size_mb:.1f}MB\n\n"
+                
+                if len(search_results) > 10:
+                    results_text += f"... and {len(search_results) - 10} more results"
+                
+                # Create download buttons for top results
+                keyboard = []
+                for i, result in enumerate(search_results[:5]):  # Top 5 results
+                    file_info = f"{result['id']}_{result['name']}"
+                    callback_data = self.create_callback_data("file", file_info)
+                    keyboard.append([InlineKeyboardButton(
+                        f"📥 Download: {result['name'][:30]}...", 
+                        callback_data=callback_data
+                    )])
+                
+                keyboard.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                await processing_msg.edit_text(results_text, reply_markup=reply_markup)
+            else:
+                await processing_msg.edit_text(
+                    f"{explanation}\n\n"
+                    "❌ No files found matching your query.\n\n"
+                    "Try:\n"
+                    "• Using different keywords\n"
+                    "• Being more specific about course codes\n"
+                    "• Checking file types (lecture, quiz, assignment)\n\n"
+                    "🏠 Return to main menu",
+                    reply_markup=InlineKeyboardMarkup([[
+                        InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")
+                    ]])
+                )
+                
+        except Exception as e:
+            logger.error(f"Error in AI search: {e}")
+            await processing_msg.edit_text(
+                f"❌ Error processing AI search: {e}\n\n"
+                "Please try again with a different query.",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")
+                ]])
+            )
+
+    def search_files_by_keywords(self, keywords: List[str]) -> List[Dict]:
+        """Search files using keywords generated by AI"""
+        if not keywords:
+            return []
+        
+        results = []
+        
+        # Get all files from index
+        all_files = self.indexer.search_files("*")  # Get all files
+        
+        # Score and filter files based on keywords
+        for file_info in all_files:
+            score = 0
+            file_name_lower = file_info['name'].lower()
+            file_path_lower = file_info['path'].lower()
+            
+            # Calculate relevance score
+            for keyword in keywords:
+                keyword_lower = keyword.lower()
+                
+                # Exact match in filename gets highest score
+                if keyword_lower in file_name_lower:
+                    score += 10
+                
+                # Partial match in filename
+                elif any(keyword_lower in word for word in file_name_lower.split()):
+                    score += 5
+                
+                # Match in path
+                if keyword_lower in file_path_lower:
+                    score += 3
+            
+            # Only include files with some relevance
+            if score > 0:
+                file_info['relevance_score'] = score
+                results.append(file_info)
+        
+        # Sort by relevance score (highest first)
+        results.sort(key=lambda x: x['relevance_score'], reverse=True)
+        
+        return results
 
     async def show_folder_contents(self, query, path: str):
         """Show folder contents with navigation buttons"""
@@ -571,6 +757,10 @@ class OneDriveBot:
             [InlineKeyboardButton("📁 Browse Files", callback_data="browse_root")]
         ]
         
+        # Add AI search button if available
+        if self.ai_handler:
+            keyboard.append([InlineKeyboardButton("🤖 AI Search", callback_data="ai_search")])
+        
         # Add refresh index button only for admin
         if query.from_user.id == self.admin_id:
             keyboard.append([InlineKeyboardButton("🔄 Refresh Index", callback_data="refresh_index")])
@@ -592,8 +782,11 @@ class OneDriveBot:
             "📂 Browse and download university files\n"
         )
         
+        if self.ai_handler:
+            welcome_text += "🤖 AI-powered search available\n"
+        
         if query.from_user.id == self.admin_id:
-            welcome_text += "� Admin controls available\n"
+            welcome_text += "⚙️ Admin controls available\n"
             
         welcome_text += "\nSelect an option below:"
         
@@ -604,6 +797,10 @@ class OneDriveBot:
         keyboard = [
             [InlineKeyboardButton("📁 Browse Files", callback_data="browse_root")]
         ]
+        
+        # Add AI search button if available
+        if self.ai_handler:
+            keyboard.append([InlineKeyboardButton("🤖 AI Search", callback_data="ai_search")])
         
         # Add refresh index button only for admin
         if update.effective_user.id == self.admin_id:
@@ -635,12 +832,14 @@ class OneDriveBot:
             "📋 Available Commands:\n"
             "• /start - Start the bot and show main menu\n"
             "• /menu - Show bot menu with options\n"
+            "• /ai_search - AI-powered file search\n"
             "• /help - Show this help message\n"
             "• /about - About this bot\n"
             "• /privacy - Privacy policy\n"
             "• /admin - Admin panel (admin only)\n\n"
             "🗂️ Navigation & Usage:\n"
             "• 📁 Browse Files - Explore university folders\n"
+            "• 🤖 AI Search - Natural language file search\n"
             "• ⬅️ Back - Navigate to parent folder\n"
             "• 🏠 Main Menu - Return to start screen\n"
             "• 🔄 Refresh - Update file index (admin only)\n\n"
@@ -656,14 +855,15 @@ class OneDriveBot:
         about_text = (
             "📖 About OneDrive University Bot\n\n"
             "🎯 Purpose: Easy access to University files\n"
-            "🔧 Technology: Python + Telegram + MS Graph\n\n"
+            "🔧 Technology: Python + Telegram + MS Graph + AI\n\n"
             "📊 Features:\n"
             "• Fast file browsing with local indexing\n"
+            "• AI-powered natural language search\n"
             "• Direct file downloads to chat\n"
             "• Smart navigation with back buttons\n"
             "• Admin management tools\n"
             "• Secure read-only access\n\n"
-            "🔗 Powered by Microsoft Graph API"
+            "🔗 Powered by Microsoft Graph API & Phi AI"
         )
         
         keyboard = [[InlineKeyboardButton("🔙 Back to Menu", callback_data="main_menu")]]
@@ -712,6 +912,30 @@ class OneDriveBot:
             reply_markup=reply_markup
         )
 
+    async def ai_search_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /ai_search command"""
+        if not self.ai_handler:
+            await update.message.reply_text(
+                "❌ AI search is not available.\n"
+                "Please contact admin to enable AI features."
+            )
+            return
+        
+        # Add user to waiting list
+        user_id = update.effective_user.id
+        self.waiting_for_ai_query.add(user_id)
+        
+        await update.message.reply_text(
+            "🤖 AI Search Ready!\n\n"
+            "Please type your search query in natural language.\n\n"
+            "Examples:\n"
+            "• \"Find math lectures from week 3\"\n"
+            "• \"EEE2203 assignment solutions\"\n"
+            "• \"CE1201 lab reports\"\n"
+            "• \"Physics quiz questions\"\n\n"
+            "Type your search query now:"
+        )
+
     def run(self):
         """Run the bot"""
         # Initialize file index (load cached or build if necessary)
@@ -733,11 +957,18 @@ class OneDriveBot:
         # Add handlers
         self.application.add_handler(CommandHandler("start", self.start_command))
         self.application.add_handler(CommandHandler("menu", self.menu_command))
+        self.application.add_handler(CommandHandler("ai_search", self.ai_search_command))
         self.application.add_handler(CommandHandler("help", self.help_command))
         self.application.add_handler(CommandHandler("about", self.about_command))
         self.application.add_handler(CommandHandler("privacy", self.privacy_command))
         self.application.add_handler(CommandHandler("admin", self.admin_command))
         self.application.add_handler(CallbackQueryHandler(self.button_callback))
+        
+        # Add message handler for AI search queries (must be after command handlers)
+        self.application.add_handler(MessageHandler(
+            filters.TEXT & ~filters.COMMAND, 
+            self.handle_ai_search_query
+        ))
         
         # Start polling
         logger.info("Starting bot...")
@@ -772,6 +1003,11 @@ class OneDriveBot:
                         await self.application.updater.stop()
                     await self.application.stop()
                     await self.application.shutdown()
+                    
+                    # Clean up AI resources
+                    if self.ai_handler:
+                        self.ai_handler.cleanup()
+                    
                     logger.info("Bot shut down successfully")
                 except Exception as e:
                     logger.error(f"Error during shutdown: {e}")
