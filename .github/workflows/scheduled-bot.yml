@@ -68,7 +68,7 @@ jobs:
           exit 1
         fi
         if [ -z "${{ secrets.TARGET_USER_ID }}" ]; then
-          echo "❌ ERROR: USER_ID secret is not set"
+          echo "❌ ERROR: TARGET_USER_ID secret is not set"
           exit 1
         fi
         if [ -z "${{ secrets.ADMIN_USER_ID }}" ]; then

@@ -90,25 +90,6 @@ jobs:
           exit 1
         fi
         echo "✅ All required secrets are configured"
-        fi
-        if [ -z "${{ secrets.AZURE_CLIENT_SECRET }}" ]; then
-          echo "❌ ERROR: AZURE_CLIENT_SECRET secret is not set"
-          exit 1
-        fi
-        if [ -z "${{ secrets.AZURE_TENANT_ID }}" ]; then
-          echo "❌ ERROR: AZURE_TENANT_ID secret is not set"
-          echo "Please ensure AZURE_TENANT_ID is configured in repository secrets"
-          exit 1
-        fi
-        if [ -z "${{ secrets.USER_ID }}" ]; then
-          echo "❌ ERROR: USER_ID secret is not set"
-          exit 1
-        fi
-        if [ -z "${{ secrets.ADMIN_USER_ID }}" ]; then
-          echo "❌ ERROR: ADMIN_USER_ID secret is not set"
-          exit 1
-        fi
-        echo "✅ All required secrets are configured"
 
     - name: Debug environment variables
       env:

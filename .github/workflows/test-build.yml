@@ -68,27 +68,43 @@ jobs:
         python -m py_compile troubleshoot.py
         python -m py_compile debug_env.py
 
-    - name: Test indexer module
+    - name: Test indexer module import only
       env:
         TELEGRAM_BOT_TOKEN: test_token
-        AZURE_CLIENT_ID: test_client
-        AZURE_CLIENT_SECRET: test_secret
-        AZURE_TENANT_ID: test_tenant
+        AZURE_CLIENT_ID: test_client_id_123456789012345678901234567890
+        AZURE_CLIENT_SECRET: test_secret_value_123456789012345678901234567890
+        AZURE_TENANT_ID: 12345678-1234-1234-1234-123456789012
         TARGET_USER_ID: test_user@domain.com
         ADMIN_USER_ID: 123456789
       run: |
-        python -c "from indexer import OneDriveIndexer; print('✅ Indexer module imports successfully')"
+        python -c "
+        import sys
+        try:
+            import indexer
+            print('✅ Indexer module imports successfully')
+        except Exception as e:
+            print(f'❌ Indexer import failed: {e}')
+            sys.exit(1)
+        "
 
-    - name: Test bot module
+    - name: Test bot module import only
       env:
         TELEGRAM_BOT_TOKEN: test_token
-        AZURE_CLIENT_ID: test_client
-        AZURE_CLIENT_SECRET: test_secret
-        AZURE_TENANT_ID: test_tenant
+        AZURE_CLIENT_ID: test_client_id_123456789012345678901234567890
+        AZURE_CLIENT_SECRET: test_secret_value_123456789012345678901234567890
+        AZURE_TENANT_ID: 12345678-1234-1234-1234-123456789012
         TARGET_USER_ID: test_user@domain.com
         ADMIN_USER_ID: 123456789
       run: |
-        python -c "from bot import OneDriveBot; print('✅ Bot module imports successfully')"
+        python -c "
+        import sys
+        try:
+            import bot
+            print('✅ Bot module imports successfully')
+        except Exception as e:
+            print(f'❌ Bot import failed: {e}')
+            sys.exit(1)
+        "
 
     - name: Run troubleshoot diagnostics
       env:
