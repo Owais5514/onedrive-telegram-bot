@@ -448,7 +448,7 @@ class OneDriveBot:
                 for i, folder in enumerate(folder_results[:3]):
                     folder_path = folder.get('path', '')
                     folder_name = os.path.basename(folder_path) or folder_path
-                    callback_data = self.create_callback_data("browse", folder_path)
+                    callback_data = self.create_callback_data("folder", folder_path)
                     keyboard.append([InlineKeyboardButton(
                         f"📂 Open: {folder_name[:25]}...", 
                         callback_data=callback_data
@@ -456,10 +456,20 @@ class OneDriveBot:
                 
                 # Add file download buttons
                 for i, result in enumerate(search_results[:3]):
-                    # Use path as identifier since id might not be available
+                    # Use path as identifier and try to find the actual file details
                     result_path = result.get('path', f'result_{i}')
                     result_name = os.path.basename(result_path) if result_path else f"File {i+1}"
-                    file_info = f"path_{result_path}"
+                    
+                    # Try to find the actual file in the index to get proper id
+                    file_id = f"ai_search_{i}"  # Fallback id
+                    for path, items in self.indexer.file_index.items():
+                        if isinstance(items, list):
+                            for item in items:
+                                if item.get('path') == result_path or (path + '/' + item.get('name', '')) == result_path:
+                                    file_id = item.get('id', f"ai_search_{i}")
+                                    break
+                    
+                    file_info = f"{file_id}_{result_name}"
                     callback_data = self.create_callback_data("file", file_info)
                     keyboard.append([InlineKeyboardButton(
                         f"📥 Download: {result_name[:20]}...", 
