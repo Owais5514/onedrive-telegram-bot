@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Document
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 from indexer import OneDriveIndexer
+from query_logger import log_user_query
 
 # Load environment variables
 load_dotenv()
@@ -32,6 +33,9 @@ class OneDriveBot:
     def __init__(self):
         self.token = os.getenv('TELEGRAM_BOT_TOKEN')
         self.admin_id = int(os.getenv('ADMIN_USER_ID', '0'))
+        
+        # Initialize query logger - uses global instance
+        logger.info("Query logger initialized")
         
         # Initialize OneDrive indexer
         self.indexer = OneDriveIndexer()
@@ -280,8 +284,22 @@ class OneDriveBot:
         data = query.data
         
         if data == "browse_root":
+            # Log root browsing activity
+            try:
+                user_id = query.from_user.id
+                username = query.from_user.username or f"user_{user_id}"
+                await log_user_query(user_id, username, "Started browsing files from root", "browse_start")
+            except Exception as e:
+                logger.warning(f"Failed to log browse start activity: {e}")
             await self.show_folder_contents(query, "root")
         elif data == "ai_search":
+            # Log AI search start
+            try:
+                user_id = query.from_user.id
+                username = query.from_user.username or f"user_{user_id}"
+                await log_user_query(user_id, username, "Started AI search session", "ai_search_start")
+            except Exception as e:
+                logger.warning(f"Failed to log AI search start activity: {e}")
             await self.handle_ai_search_button(query)
         elif data == "refresh_index":
             await self.refresh_index(query)
@@ -360,6 +378,10 @@ class OneDriveBot:
             return
         
         user_query = update.message.text.strip()
+        username = update.effective_user.username or f"user_{user_id}"
+        
+        # Log the AI search query
+        await log_user_query(user_id, username, user_query, "ai_search")
         
         # Send processing message
         processing_msg = await update.message.reply_text("🤖 Processing your query with AI...")
@@ -420,6 +442,10 @@ class OneDriveBot:
             # Format results
             if file_results or folder_results:
                 results_text = f"🤖 **AI Search Results**\n{explanation}\n\n"
+                
+                # Log the AI search results for tracking
+                result_summary = f"AI search '{user_query}' returned {len(file_results)} files and {len(folder_results)} folders"
+                await log_user_query(user_id, username, result_summary, "ai_search_result")
                 
                 # Show folder recommendations first
                 if folder_results:
@@ -652,6 +678,16 @@ class OneDriveBot:
         """Show folder contents with navigation buttons"""
         contents = self.get_folder_contents(path)
         
+        # Log folder browsing activity
+        try:
+            user_id = query.from_user.id
+            username = query.from_user.username or f"user_{user_id}"
+            folder_name = path.split("/")[-1] if path != "root" else "University"
+            browse_action = f"Browsed folder: {folder_name} (path: {path})"
+            await log_user_query(user_id, username, browse_action, "browse_folder")
+        except Exception as e:
+            logger.warning(f"Failed to log folder browse activity: {e}")
+        
         if not contents:
             await query.edit_message_text("📁 Empty folder or error loading contents.")
             return
@@ -721,6 +757,15 @@ class OneDriveBot:
             return
             
         file_id, file_name = parts
+        
+        # Log file interaction
+        try:
+            user_id = query.from_user.id
+            username = query.from_user.username or f"user_{user_id}"
+            file_action = f"Viewed file details: {file_name} (ID: {file_id})"
+            await log_user_query(user_id, username, file_action, "file_view")
+        except Exception as e:
+            logger.warning(f"Failed to log file view activity: {e}")
         
         # Find file info to check size and get folder path
         file_details = None
@@ -833,6 +878,15 @@ class OneDriveBot:
                     filename=file_info['name'],
                     caption=f"📄 {file_info['name']} ({file_size_mb:.1f}MB)"
                 )
+                
+                # Log successful file download
+                try:
+                    user_id = query.from_user.id
+                    username = query.from_user.username or f"user_{user_id}"
+                    download_action = f"Downloaded file: {file_info['name']} ({file_size_mb:.1f}MB) from {folder_path}"
+                    await log_user_query(user_id, username, download_action, "file_download")
+                except Exception as e:
+                    logger.warning(f"Failed to log file download activity: {e}")
                 
                 # Show success message with navigation
                 keyboard = [

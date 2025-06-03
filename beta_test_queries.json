@@ -1,0 +1,173 @@
+[
+  {
+    "timestamp": "2025-06-03T08:36:39.731517",
+    "user_id": 12345,
+    "username": "test_user",
+    "query": "Find math lectures",
+    "query_type": "ai_search",
+    "date": "2025-06-03",
+    "time": "08:36:39"
+  },
+  {
+    "timestamp": "2025-06-03T08:36:39.736591",
+    "user_id": 12345,
+    "username": "test_user",
+    "query": "Browsed folder: Mathematics",
+    "query_type": "browse_folder",
+    "date": "2025-06-03",
+    "time": "08:36:39"
+  },
+  {
+    "timestamp": "2025-06-03T08:36:39.741431",
+    "user_id": 12345,
+    "username": "test_user",
+    "query": "Downloaded file: lecture1.pdf",
+    "query_type": "file_download",
+    "date": "2025-06-03",
+    "time": "08:36:39"
+  },
+  {
+    "timestamp": "2025-06-03T08:37:16.428164",
+    "user_id": 12345,
+    "username": "test_user",
+    "query": "Find math lectures",
+    "query_type": "ai_search",
+    "date": "2025-06-03",
+    "time": "08:37:16"
+  },
+  {
+    "timestamp": "2025-06-03T08:37:39.559750",
+    "user_id": 12345,
+    "username": "test_user",
+    "query": "Test query",
+    "query_type": "ai_search",
+    "date": "2025-06-03",
+    "time": "08:37:39"
+  },
+  {
+    "timestamp": "2025-06-03T08:37:59.898333",
+    "user_id": 12345,
+    "username": "test_user",
+    "query": "Test query",
+    "query_type": "ai_search",
+    "date": "2025-06-03",
+    "time": "08:37:59"
+  },
+  {
+    "timestamp": "2025-06-03T08:38:29.125758",
+    "user_id": 12345,
+    "username": "test_user",
+    "query": "Test AI search query",
+    "query_type": "ai_search",
+    "date": "2025-06-03",
+    "time": "08:38:29"
+  },
+  {
+    "timestamp": "2025-06-03T08:38:29.135831",
+    "user_id": 12345,
+    "username": "test_user",
+    "query": "Browsed folder: Mathematics",
+    "query_type": "browse_folder",
+    "date": "2025-06-03",
+    "time": "08:38:29"
+  },
+  {
+    "timestamp": "2025-06-03T08:38:29.140594",
+    "user_id": 12345,
+    "username": "test_user",
+    "query": "Downloaded file: lecture1.pdf",
+    "query_type": "file_download",
+    "date": "2025-06-03",
+    "time": "08:38:29"
+  },
+  {
+    "timestamp": "2025-06-03T08:38:59.459619",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Started browsing files from root",
+    "query_type": "browse_start",
+    "date": "2025-06-03",
+    "time": "08:38:59"
+  },
+  {
+    "timestamp": "2025-06-03T08:38:59.463430",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Browsed folder: University (path: root)",
+    "query_type": "browse_folder",
+    "date": "2025-06-03",
+    "time": "08:38:59"
+  },
+  {
+    "timestamp": "2025-06-03T08:39:01.290960",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Browsed folder: 2nd Year 1st Semester (path: 2nd Year 1st Semester)",
+    "query_type": "browse_folder",
+    "date": "2025-06-03",
+    "time": "08:39:01"
+  },
+  {
+    "timestamp": "2025-06-03T08:39:03.303446",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Browsed folder: Personal Stuffs (path: 2nd Year 1st Semester/Personal Stuffs)",
+    "query_type": "browse_folder",
+    "date": "2025-06-03",
+    "time": "08:39:03"
+  },
+  {
+    "timestamp": "2025-06-03T08:39:07.744487",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Started AI search session",
+    "query_type": "ai_search_start",
+    "date": "2025-06-03",
+    "time": "08:39:07"
+  },
+  {
+    "timestamp": "2025-06-03T08:39:14.242495",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Math quiz files",
+    "query_type": "ai_search",
+    "date": "2025-06-03",
+    "time": "08:39:14"
+  },
+  {
+    "timestamp": "2025-06-03T08:39:16.045436",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "AI search 'Math quiz files' returned 8 files and 8 folders",
+    "query_type": "ai_search_result",
+    "date": "2025-06-03",
+    "time": "08:39:16"
+  },
+  {
+    "timestamp": "2025-06-03T08:39:18.944578",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Browsed folder: MATH 1203 (path: 1st Year 2nd Semester/Books/MATH 1203)",
+    "query_type": "browse_folder",
+    "date": "2025-06-03",
+    "time": "08:39:18"
+  },
+  {
+    "timestamp": "2025-06-03T08:39:22.355933",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Browsed folder: Books (path: 1st Year 2nd Semester/Books)",
+    "query_type": "browse_folder",
+    "date": "2025-06-03",
+    "time": "08:39:22"
+  },
+  {
+    "timestamp": "2025-06-03T08:39:24.166563",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Browsed folder: PHY 1205 (path: 1st Year 2nd Semester/Books/PHY 1205)",
+    "query_type": "browse_folder",
+    "date": "2025-06-03",
+    "time": "08:39:24"
+  }
+]
