@@ -371,37 +371,75 @@ class OneDriveBot:
                 if isinstance(items, list):
                     for item in items:
                         if isinstance(item, dict) and item.get('type') == 'file':
-                            all_file_paths.append(item.get('path', path))
+                            file_path = item.get('path', f"{path}/{item.get('name', '')}")
+                            all_file_paths.append(file_path)
             
             # Process with enhanced AI search
             explanation, search_results = await self.ai_handler.enhanced_search(user_query, all_file_paths)
             
-            # Separate files and folders from results
-            file_results = [r for r in search_results if r.get('type') != 'folder']
-            folder_results = [r for r in search_results if r.get('type') == 'folder']
+            # Enrich search results with file details from indexer
+            enriched_results = []
+            for result in search_results:
+                result_path = result.get('path', '')
+                
+                # Find file details from indexer
+                file_details = None
+                for folder_path, folder_data in self.indexer.file_index.items():
+                    if isinstance(folder_data, list):
+                        for item in folder_data:
+                            if isinstance(item, dict) and item.get('path') == result_path:
+                                file_details = item
+                                break
+                    if file_details:
+                        break
+                
+                # Enrich result with file details
+                enriched_result = result.copy()
+                if file_details:
+                    enriched_result.update({
+                        'name': file_details.get('name', os.path.basename(result_path) or 'Unknown'),
+                        'size': file_details.get('size', 0),
+                        'type': file_details.get('type', 'file'),
+                        'relevance_score': result.get('score', 0)
+                    })
+                else:
+                    # Fallback values
+                    enriched_result.update({
+                        'name': os.path.basename(result_path) or 'Unknown',
+                        'size': 0,
+                        'type': 'file' if result.get('type') != 'folder' else 'folder',
+                        'relevance_score': result.get('score', 0)
+                    })
+                
+                enriched_results.append(enriched_result)
+            
+            # Separate files and folders from enriched results
+            file_results = [r for r in enriched_results if r.get('type') != 'folder']
+            folder_results = [r for r in enriched_results if r.get('type') == 'folder']
             
             # Format results
             if file_results or folder_results:
-                results_text = f"{explanation}\n\n"
+                results_text = f"🤖 **AI Search Results**\n{explanation}\n\n"
                 
                 # Show folder recommendations first
                 if folder_results:
                     results_text += f"📁 **Recommended Folders** ({len(folder_results)}):\n"
                     for i, folder in enumerate(folder_results[:5], 1):
-                        results_text += f"{i}. 📂 {folder.get('path', 'Unknown')}\n"
+                        results_text += f"{i}. 📂 {folder.get('name', os.path.basename(folder.get('path', '')) or 'Unknown')}\n"
+                        results_text += f"   📂 Path: {folder.get('path', 'Unknown')}\n"
                         results_text += f"   🎯 Score: {folder.get('score', 0):.2f}\n\n"
                 
                 # Show file results
-                if search_results:
-                    results_text += f"📄 **File Results** ({len(search_results)} found):\n"
-                    for i, result in enumerate(search_results[:8], 1):  # Show top 8 files
-                        size_mb = result['size'] / (1024 * 1024) if result['size'] > 0 else 0
-                        results_text += f"{i}. 📄 {result['name']}\n"
-                        results_text += f"   📂 Path: {result['path']}\n"
-                        results_text += f"   💾 Size: {size_mb:.1f}MB | 🎯 Score: {result['relevance_score']}\n\n"
+                if file_results:
+                    results_text += f"📄 **File Results** ({len(file_results)} found):\n"
+                    for i, result in enumerate(file_results[:8], 1):  # Show top 8 files
+                        size_mb = result.get('size', 0) / (1024 * 1024) if result.get('size', 0) > 0 else 0
+                        results_text += f"{i}. 📄 {result.get('name', 'Unknown')}\n"
+                        results_text += f"   📂 Path: {result.get('path', 'Unknown')}\n"
+                        results_text += f"   💾 Size: {size_mb:.1f}MB | 🎯 Score: {result.get('relevance_score', 0):.2f}\n\n"
                     
-                    if len(search_results) > 8:
-                        results_text += f"... and {len(search_results) - 8} more results"
+                    if len(file_results) > 8:
+                        results_text += f"... and {len(file_results) - 8} more results"
                 
                 # Create buttons for top results
                 keyboard = []
@@ -418,10 +456,13 @@ class OneDriveBot:
                 
                 # Add file download buttons
                 for i, result in enumerate(search_results[:3]):
-                    file_info = f"{result['id']}_{result['name']}"
+                    # Use path as identifier since id might not be available
+                    result_path = result.get('path', f'result_{i}')
+                    result_name = os.path.basename(result_path) if result_path else f"File {i+1}"
+                    file_info = f"path_{result_path}"
                     callback_data = self.create_callback_data("file", file_info)
                     keyboard.append([InlineKeyboardButton(
-                        f"📥 Download: {result['name'][:20]}...", 
+                        f"📥 Download: {result_name[:20]}...", 
                         callback_data=callback_data
                     )])
                 
@@ -623,8 +664,10 @@ class OneDriveBot:
         
         # Add files
         for file in files[:10]:  # Limit to prevent message too long
-            size_mb = file['size'] / (1024 * 1024) if file['size'] > 0 else 0
-            file_info = f"{file['id']}_{file['name']}"
+            size_mb = file.get('size', 0) / (1024 * 1024) if file.get('size', 0) > 0 else 0
+            # Use path or name as identifier, fallback to index if neither available
+            file_id = file.get('id', file.get('path', file.get('name', f'file_{len(keyboard)}')))
+            file_info = f"{file_id}_{file.get('name', 'unknown')}"
             callback_data = self.create_callback_data("file", file_info)
             
             keyboard.append([InlineKeyboardButton(
@@ -688,7 +731,7 @@ class OneDriveBot:
             return
         
         # Check file size (Telegram limit is 50MB)
-        file_size_mb = file_details['size'] / (1024 * 1024)
+        file_size_mb = file_details.get('size', 0) / (1024 * 1024)
         if file_size_mb > 50:
             keyboard = [
                 [InlineKeyboardButton("⬅️ Back to Folder", callback_data=self.create_callback_data("folder", current_folder_path))],
@@ -757,7 +800,7 @@ class OneDriveBot:
                 return
             
             # Double-check file size
-            file_size_mb = file_info['size'] / (1024 * 1024)
+            file_size_mb = file_info.get('size', 0) / (1024 * 1024)
             if file_size_mb > 50:
                 keyboard = [
                     [InlineKeyboardButton("⬅️ Back to Folder", callback_data=self.create_callback_data("folder", folder_path))],
