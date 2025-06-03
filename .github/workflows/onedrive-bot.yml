@@ -67,8 +67,20 @@ jobs:
           "start_bot")
             echo "🤖 Starting OneDrive Telegram Bot..."
             if [ "${{ github.event.inputs.duration }}" != "0" ]; then
-              timeout "${{ github.event.inputs.duration }}m" python main.py || echo "⏰ Bot stopped after ${{ github.event.inputs.duration }} minutes"
+              echo "⏰ Bot will run for ${{ github.event.inputs.duration }} minutes"
+              # Run with timeout and proper signal handling
+              timeout --signal=TERM --kill-after=30s "${{ github.event.inputs.duration }}m" python main.py || {
+                exit_code=$?
+                if [ $exit_code -eq 124 ]; then
+                  echo "⏰ Bot stopped after ${{ github.event.inputs.duration }} minutes (timeout)"
+                elif [ $exit_code -eq 137 ]; then
+                  echo "🛑 Bot was forcefully terminated"
+                else
+                  echo "❌ Bot exited with code $exit_code"
+                fi
+              }
             else
+              echo "🔄 Bot will run indefinitely until manually stopped"
               python main.py
             fi
             ;;

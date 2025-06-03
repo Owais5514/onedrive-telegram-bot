@@ -37,6 +37,9 @@ class OneDriveBot:
         # Cache
         self.unlimited_users = set()
         
+        # Shutdown flag
+        self.shutdown_requested = False
+        
         # Load data
         self.load_data()
     def load_data(self):
@@ -557,7 +560,10 @@ class OneDriveBot:
         elif action == "shutdown":
             await query.edit_message_text("🛑 Shutting down bot...")
             await self.notify_subscribers("🔴 Bot Ended Operations")
+            # Set shutdown flag and stop application
+            self.shutdown_requested = True
             await self.application.stop()
+            await self.application.shutdown()
 
     async def show_main_menu(self, query):
         """Show the main menu"""
@@ -736,14 +742,46 @@ class OneDriveBot:
         # Start polling
         logger.info("Starting bot...")
         
-        async def startup_notify():
-            await self.notify_subscribers("🟢 Bot Started Operations")
+        # Run bot with proper shutdown handling
+        import signal
+        import asyncio
         
-        # Run bot with startup notification
-        self.application.run_polling(
-            stop_signals=None,
-            drop_pending_updates=True
-        )
+        async def run_bot():
+            """Run the bot with proper shutdown handling"""
+            try:
+                # Initialize application
+                await self.application.initialize()
+                await self.application.start()
+                
+                # Send startup notification
+                await self.notify_subscribers("🟢 Bot Started Operations")
+                
+                # Start polling
+                await self.application.updater.start_polling(drop_pending_updates=True)
+                
+                # Keep running until shutdown is requested
+                while not self.shutdown_requested:
+                    await asyncio.sleep(1)
+                    
+            except Exception as e:
+                logger.error(f"Error running bot: {e}")
+            finally:
+                # Clean shutdown
+                try:
+                    if hasattr(self.application, 'updater') and self.application.updater.running:
+                        await self.application.updater.stop()
+                    await self.application.stop()
+                    await self.application.shutdown()
+                    logger.info("Bot shut down successfully")
+                except Exception as e:
+                    logger.error(f"Error during shutdown: {e}")
+        
+        # Run the bot
+        try:
+            asyncio.run(run_bot())
+        except KeyboardInterrupt:
+            logger.info("Bot stopped by KeyboardInterrupt")
+            self.shutdown_requested = True
 
 if __name__ == "__main__":
     bot = OneDriveBot()
