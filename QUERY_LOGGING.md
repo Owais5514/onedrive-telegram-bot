@@ -38,9 +38,13 @@ The readable log uses emojis and clear formatting:
 ```
 
 ### 🔄 Git Integration
-- Logs are automatically committed to git after each entry
+- Bot runs from `main` branch (normal operation)
+- Logs are automatically committed to `logs` branch (separate from main code)
+- Working directory stays on `main` - no branch switching during bot operation
+- Uses advanced git commands (`commit-tree`) to commit to logs branch without checkout
 - Each commit includes the user and timestamp information
 - Git repository is auto-initialized if needed
+- Log files are force-added to bypass `.gitignore` restrictions
 
 ## Implementation Details
 
@@ -106,3 +110,18 @@ summary = query_logger.export_daily_summary("2025-06-03")
 - JSON format for automated processing
 
 The query logger is now actively logging all user interactions in both AI search and browse files workflows, providing comprehensive insights into bot usage patterns.
+
+## ✅ **FIXED: Proper Branch Management**
+
+**Problem Solved:** The bot now correctly:
+- ✅ **Runs from `main` branch** (stable bot code)
+- ✅ **Commits logs to `logs` branch** (separate log history)  
+- ✅ **Never switches working directory** (maintains stability)
+
+**Technical Implementation:**
+- Uses `git commit-tree` for direct branch commits
+- Force-adds log files with `-f` flag to bypass `.gitignore`
+- Creates `logs` branch automatically if needed
+- No `git checkout` commands that could disrupt bot operation
+
+**Production Status:** The query logger is now fully operational and providing valuable insights into how users interact with both the AI search and browse files features of the bot!
