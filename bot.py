@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Document
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 from indexer import OneDriveIndexer
-from query_logger import log_user_query
+from query_logger import log_user_query, query_logger
 
 # Load environment variables
 load_dotenv()
@@ -64,6 +64,9 @@ class OneDriveBot:
         
         # Shutdown flag
         self.shutdown_requested = False
+        
+        # Track bot startup time for pending message handling
+        self.startup_time = None
         
         # AI search state
         self.waiting_for_ai_query = set()  # Track users waiting to input AI search query
@@ -153,6 +156,18 @@ class OneDriveBot:
         
         return callback_data
 
+    def _was_message_queued(self, update: Update) -> bool:
+        """Check if this message was queued while bot was offline"""
+        if self.startup_time and hasattr(update, 'message') and update.message:
+            return update.message.date < self.startup_time
+        return False
+
+    def _add_queued_message_notice(self, text: str, was_queued: bool) -> str:
+        """Add notice to message if it was queued"""
+        if was_queued:
+            return f"✅ Bot is now online and ready!\n(Your command was received while bot was starting)\n\n{text}"
+        return text
+
     # Command handlers
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /start command"""
@@ -182,8 +197,13 @@ class OneDriveBot:
         
         welcome_text = (
             "🎓 Welcome to OneDrive University Bot!\n\n"
-            "📂 Browse and download university files\n"
         )
+        
+        # Check if this is a queued command from when bot was offline
+        if self._was_message_queued(update):
+            welcome_text = self._add_queued_message_notice(welcome_text, True)
+        
+        welcome_text += "📂 Browse and download university files\n"
         
         if update.effective_user.id == self.admin_id:
             welcome_text += "� Admin controls available\n"
@@ -210,6 +230,9 @@ class OneDriveBot:
             "• 🔄 Refresh - Update file index (admin only)\n\n"
             "⚡ Performance: Files are cached for speed"
         )
+        
+        # Add queued message notice if applicable
+        help_text = self._add_queued_message_notice(help_text, self._was_message_queued(update))
         
         keyboard = [[InlineKeyboardButton("🔙 Back to Menu", callback_data="main_menu")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1222,11 +1245,22 @@ class OneDriveBot:
                 await self.application.initialize()
                 await self.application.start()
                 
+                # Set startup time for pending message detection
+                from datetime import datetime, timezone
+                self.startup_time = datetime.now(timezone.utc)
+                
                 # Send startup notification
                 await self.notify_subscribers("🟢 Bot Started Operations")
                 
-                # Start polling
-                await self.application.updater.start_polling(drop_pending_updates=True)
+                # Start polling with pending updates handling
+                # Process pending updates but limit to recent ones to avoid spam/flooding
+                await self.application.updater.start_polling(
+                    drop_pending_updates=False,
+                    allowed_updates=['message', 'callback_query']
+                )
+                
+                # Brief delay to allow pending messages to be processed
+                await asyncio.sleep(2)
                 
                 # Keep running until shutdown is requested
                 while not self.shutdown_requested:
@@ -1245,6 +1279,10 @@ class OneDriveBot:
                     # Clean up AI resources
                     if self.ai_handler:
                         self.ai_handler.cleanup()
+                    
+                    # Stop periodic query logging commits and do final commit
+                    query_logger.stop_periodic_commits()
+                    query_logger.final_commit_and_push()
                     
                     logger.info("Bot shut down successfully")
                 except Exception as e:

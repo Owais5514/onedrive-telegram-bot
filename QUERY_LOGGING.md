@@ -75,6 +75,40 @@ The query logger automatically configures git identity for proper commit attribu
 
 **Fixed Issue:** Previously git commits failed with "Author identity unknown" error. Now resolved with proper identity setup in both `_init_git()` and commit environment variables, plus GitHub Actions workflow configuration.
 
+## 🔄 **Real-Time Periodic Commits**
+
+### Overview
+The query logger now implements **automatic periodic commits every 60 seconds**, ensuring that logs are regularly committed to git even during long bot sessions.
+
+### How It Works
+1. **Background Task**: A background asyncio task runs every 60 seconds
+2. **Change Detection**: Only commits when there are actual changes since the last commit
+3. **File Monitoring**: Checks file modification times to detect changes
+4. **Non-Blocking**: Runs asynchronously without blocking bot operations
+5. **Graceful Shutdown**: Stops cleanly when the bot shuts down
+
+### GitHub Actions Compatibility
+- **Environment Agnostic**: Works in both local and GitHub Actions environments
+- **Final Push**: Attempts to push logs branch to remote on shutdown
+- **Error Resilient**: Continues operation even if git operations fail
+- **Automatic Cleanup**: Properly handles task cancellation and resource cleanup
+
+### Benefits
+- **Continuous Logging**: No risk of losing logs if bot crashes
+- **Real-Time Visibility**: Logs appear in git history throughout bot execution
+- **Reduced Memory Usage**: Regular commits prevent accumulation of uncommitted changes
+- **Better Debugging**: Timestamped commits help track bot activity over time
+
+### Implementation Details
+```python
+# Periodic commit task starts automatically
+query_logger = QueryLogger()  # Starts background task
+
+# Manual control (optional)
+query_logger.stop_periodic_commits()  # Stop background commits
+query_logger.final_commit_and_push()  # Final commit + push
+```
+
 ## Implementation Details
 
 ### Code Integration
