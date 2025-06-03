@@ -146,10 +146,18 @@ class QueryLogger:
             json.dump(self.queries_data, f, indent=2, ensure_ascii=False)
     
     def _git_commit(self, query_entry: dict):
-        """Commit log files to git"""
+        """Commit log files to git logs branch without switching working directory"""
         try:
-            # Add files to git
-            subprocess.run(['git', 'add', self.log_file, self.json_file], check=True, cwd='.')
+            # Store current branch
+            current_branch_result = subprocess.run(['git', 'branch', '--show-current'], 
+                                                 capture_output=True, text=True, cwd='.')
+            current_branch = current_branch_result.stdout.strip() if current_branch_result.returncode == 0 else "main"
+            
+            # Create logs branch if it doesn't exist
+            subprocess.run(['git', 'branch', 'logs'], capture_output=True, cwd='.')
+            
+            # Add files to staging area
+            subprocess.run(['git', 'add', '-f', self.log_file, self.json_file], capture_output=True, cwd='.')
             
             # Create commit message
             commit_msg = (
@@ -157,13 +165,40 @@ class QueryLogger:
                 f"({query_entry['date']} {query_entry['time']})"
             )
             
-            # Commit
-            subprocess.run(['git', 'commit', '-m', commit_msg], check=True, cwd='.')
+            # Commit to logs branch without checkout using git commit-tree
+            # First, get the current tree
+            tree_result = subprocess.run(['git', 'write-tree'], capture_output=True, text=True, cwd='.')
+            if tree_result.returncode != 0:
+                raise Exception("Failed to write tree")
             
-            logger.info("Query logged and committed to git")
+            tree_hash = tree_result.stdout.strip()
+            
+            # Get logs branch HEAD (if exists)
+            logs_head_result = subprocess.run(['git', 'rev-parse', 'logs'], 
+                                            capture_output=True, text=True, cwd='.')
+            
+            # Create commit
+            if logs_head_result.returncode == 0:
+                # Logs branch exists, commit with parent
+                logs_head = logs_head_result.stdout.strip()
+                commit_result = subprocess.run(['git', 'commit-tree', tree_hash, '-p', logs_head, '-m', commit_msg],
+                                             capture_output=True, text=True, cwd='.')
+            else:
+                # First commit to logs branch
+                commit_result = subprocess.run(['git', 'commit-tree', tree_hash, '-m', commit_msg],
+                                             capture_output=True, text=True, cwd='.')
+            
+            if commit_result.returncode != 0:
+                raise Exception(f"Failed to create commit: {commit_result.stderr}")
+            
+            commit_hash = commit_result.stdout.strip()
+            
+            # Update logs branch to point to new commit
+            subprocess.run(['git', 'branch', '-f', 'logs', commit_hash], check=True, cwd='.')
+            
+            logger.info(f"Query logged and committed to git logs branch (staying on {current_branch})")
             
         except subprocess.CalledProcessError as e:
-            # Might fail if no changes or git issues - that's okay
             logger.debug(f"Git commit failed (might be no changes): {e}")
         except Exception as e:
             logger.warning(f"Git commit error: {e}")

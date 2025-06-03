@@ -169,5 +169,23 @@
     "query_type": "browse_folder",
     "date": "2025-06-03",
     "time": "08:39:24"
+  },
+  {
+    "timestamp": "2025-06-03T09:00:05.033743",
+    "user_id": 99999,
+    "username": "test_user",
+    "query": "Test commit to logs branch",
+    "query_type": "ai_search",
+    "date": "2025-06-03",
+    "time": "09:00:05"
+  },
+  {
+    "timestamp": "2025-06-03T09:00:30.265935",
+    "user_id": 88888,
+    "username": "async_test_user",
+    "query": "Test async logging",
+    "query_type": "browse_folder",
+    "date": "2025-06-03",
+    "time": "09:00:30"
   }
 ]
