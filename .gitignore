@@ -1,6 +1,11 @@
 # Environment variables
 .env
 
+# Archive and backup files
+archive/
+*.backup
+*.old
+
 # Python cache and bytecode
 __pycache__/
 *.py[cod]

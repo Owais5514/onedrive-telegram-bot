@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 # Try to import AI handler (optional)
 try:
-    from ai_handler import AIHandler
+    from ai_handler_client import AIHandlerClient
     AI_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"AI features not available: {e}")
@@ -40,10 +40,10 @@ class OneDriveBot:
         self.ai_handler = None
         if AI_AVAILABLE:
             try:
-                self.ai_handler = AIHandler()
+                self.ai_handler = AIHandlerClient(server_url="http://localhost:8001")
                 # Start loading model in background
-                self.ai_handler.start_background_loading()
-                logger.info("AI handler initialized - model loading in background")
+                # AI handler client doesn't need background loading - server handles it
+                logger.info("AI handler initialized - using external model server")
             except Exception as e:
                 logger.warning(f"Failed to initialize AI handler: {e}")
                 self.ai_handler = None
@@ -325,12 +325,10 @@ class OneDriveBot:
         
         # Check model status for user feedback
         status_text = ""
-        if self.ai_handler.is_model_ready():
+        if await self.ai_handler.is_server_ready():
             status_text = "🤖 AI model is ready for advanced search!\n\n"
-        elif self.ai_handler.is_loading():
-            status_text = "🔄 AI model is loading in background...\n(Search will use smart fallback for now)\n\n"
         else:
-            status_text = "⚠️ AI model not loaded, using smart keyword extraction\n\n"
+            status_text = "🔄 AI model server is starting up...\n(Search will use smart fallback for now)\n\n"
         
         await query.edit_message_text(
             f"{status_text}"
@@ -367,32 +365,63 @@ class OneDriveBot:
         processing_msg = await update.message.reply_text("🤖 Processing your query with AI...")
         
         try:
-            # Process with AI
-            keywords, explanation = self.ai_handler.process_ai_search(user_query)
+            # Get all file paths for search
+            all_file_paths = []
+            for path, items in self.indexer.file_index.items():
+                if isinstance(items, list):
+                    for item in items:
+                        if isinstance(item, dict) and item.get('type') == 'file':
+                            all_file_paths.append(item.get('path', path))
             
-            # Search files using generated keywords
-            search_results = self.search_files_by_keywords(keywords)
+            # Process with enhanced AI search
+            explanation, search_results = await self.ai_handler.enhanced_search(user_query, all_file_paths)
+            
+            # Separate files and folders from results
+            file_results = [r for r in search_results if r.get('type') != 'folder']
+            folder_results = [r for r in search_results if r.get('type') == 'folder']
             
             # Format results
-            if search_results:
-                results_text = f"{explanation}\n\n📁 Search Results ({len(search_results)} found):\n\n"
+            if file_results or folder_results:
+                results_text = f"{explanation}\n\n"
                 
-                for i, result in enumerate(search_results[:10], 1):  # Limit to 10 results
-                    size_mb = result['size'] / (1024 * 1024) if result['size'] > 0 else 0
-                    results_text += f"{i}. 📄 {result['name']}\n"
-                    results_text += f"   📂 Path: {result['path']}\n"
-                    results_text += f"   💾 Size: {size_mb:.1f}MB\n\n"
+                # Show folder recommendations first
+                if folder_results:
+                    results_text += f"📁 **Recommended Folders** ({len(folder_results)}):\n"
+                    for i, folder in enumerate(folder_results[:5], 1):
+                        results_text += f"{i}. 📂 {folder.get('path', 'Unknown')}\n"
+                        results_text += f"   🎯 Score: {folder.get('score', 0):.2f}\n\n"
                 
-                if len(search_results) > 10:
-                    results_text += f"... and {len(search_results) - 10} more results"
+                # Show file results
+                if search_results:
+                    results_text += f"📄 **File Results** ({len(search_results)} found):\n"
+                    for i, result in enumerate(search_results[:8], 1):  # Show top 8 files
+                        size_mb = result['size'] / (1024 * 1024) if result['size'] > 0 else 0
+                        results_text += f"{i}. 📄 {result['name']}\n"
+                        results_text += f"   📂 Path: {result['path']}\n"
+                        results_text += f"   💾 Size: {size_mb:.1f}MB | 🎯 Score: {result['relevance_score']}\n\n"
+                    
+                    if len(search_results) > 8:
+                        results_text += f"... and {len(search_results) - 8} more results"
                 
-                # Create download buttons for top results
+                # Create buttons for top results
                 keyboard = []
-                for i, result in enumerate(search_results[:5]):  # Top 5 results
+                
+                # Add folder buttons
+                for i, folder in enumerate(folder_results[:3]):
+                    folder_path = folder.get('path', '')
+                    folder_name = os.path.basename(folder_path) or folder_path
+                    callback_data = self.create_callback_data("browse", folder_path)
+                    keyboard.append([InlineKeyboardButton(
+                        f"📂 Open: {folder_name[:25]}...", 
+                        callback_data=callback_data
+                    )])
+                
+                # Add file download buttons
+                for i, result in enumerate(search_results[:3]):
                     file_info = f"{result['id']}_{result['name']}"
                     callback_data = self.create_callback_data("file", file_info)
                     keyboard.append([InlineKeyboardButton(
-                        f"📥 Download: {result['name'][:30]}...", 
+                        f"📥 Download: {result['name'][:20]}...", 
                         callback_data=callback_data
                     )])
                 
@@ -465,6 +494,108 @@ class OneDriveBot:
         results.sort(key=lambda x: x['relevance_score'], reverse=True)
         
         return results
+
+    def enhanced_search_files_by_keywords(self, keywords: List[str], user_query: str) -> List[Dict]:
+        """Hybrid search: semantic, keyword, and fuzzy matching for files with better scoring"""
+        if not keywords:
+            return []
+        results = []
+        all_files = self.indexer.search_files("*")
+        user_query_lower = user_query.lower()
+        for file_info in all_files:
+            score = 0
+            file_name_lower = file_info['name'].lower()
+            file_path_lower = file_info['path'].lower()
+            # Keyword and partial matches
+            for keyword in keywords:
+                keyword_lower = keyword.lower()
+                if keyword_lower in file_name_lower:
+                    score += 12
+                elif any(keyword_lower in word for word in file_name_lower.split()):
+                    score += 6
+                if keyword_lower in file_path_lower:
+                    score += 4
+            # Fuzzy match (sequence similarity)
+            from difflib import SequenceMatcher
+            similarity = SequenceMatcher(None, user_query_lower, file_name_lower).ratio()
+            if similarity > 0.5:
+                score += int(similarity * 10)
+            # Bonus for subject or course code in path
+            for keyword in keywords:
+                if len(keyword) > 3 and keyword.lower() in file_path_lower:
+                    score += 2
+            if score > 0:
+                file_info['relevance_score'] = score
+                results.append(file_info)
+        results.sort(key=lambda x: x['relevance_score'], reverse=True)
+        return results
+    
+    def calculate_file_relevance_score(self, file_info: Dict, keywords: List[str], user_query: str) -> int:
+        """Calculate enhanced relevance score for a file"""
+        score = 0
+        file_name_lower = file_info['name'].lower()
+        file_path_lower = file_info['path'].lower()
+        query_lower = user_query.lower()
+        
+        # 1. Exact query phrase match (highest score)
+        if query_lower in file_name_lower:
+            score += 50
+        elif query_lower in file_path_lower:
+            score += 30
+        
+        # 2. Individual word matches in query
+        query_words = query_lower.split()
+        for word in query_words:
+            if len(word) > 2:  # Skip short words
+                if word in file_name_lower:
+                    score += 15
+                elif word in file_path_lower:
+                    score += 8
+        
+        # 3. Keyword matches with different weights
+        for keyword in keywords:
+            keyword_lower = keyword.lower()
+            
+            # Exact match in filename gets highest score
+            if keyword_lower == file_name_lower or keyword_lower in file_name_lower.split():
+                score += 20
+            # Partial match in filename
+            elif keyword_lower in file_name_lower:
+                score += 12
+            # Match in path
+            elif keyword_lower in file_path_lower:
+                score += 6
+            
+            # Fuzzy matching for typos and variations
+            from difflib import SequenceMatcher
+            similarity = SequenceMatcher(None, keyword_lower, file_name_lower).ratio()
+            if similarity > 0.7:  # 70% similarity
+                score += int(similarity * 10)
+        
+        # 4. File type boost
+        file_extension = file_info['name'].split('.')[-1].lower() if '.' in file_info['name'] else ''
+        if file_extension in ['pdf', 'doc', 'docx', 'ppt', 'pptx']:
+            score += 5
+        
+        # 5. Course code detection bonus
+        import re
+        course_patterns = [r'[A-Z]{2,4}\d{4}', r'[A-Z]{3}\d{3}', r'[A-Z]{4}\d{3}']
+        for pattern in course_patterns:
+            if re.search(pattern, file_name_lower.upper()) or re.search(pattern, query_lower.upper()):
+                score += 15
+        
+        # 6. Recent files bonus (based on modification date)
+        try:
+            from datetime import datetime, timedelta
+            if 'modified' in file_info:
+                modified_date = datetime.fromisoformat(file_info['modified'].replace('Z', '+00:00'))
+                days_old = (datetime.now(modified_date.tzinfo) - modified_date).days
+                if days_old < 30:  # Recent files get bonus
+                    score += max(5 - (days_old // 7), 1)  # 5 points for this week, decreasing
+        except:
+            pass  # Ignore date parsing errors
+        
+        return score
 
     async def show_folder_contents(self, query, path: str):
         """Show folder contents with navigation buttons"""
