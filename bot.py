@@ -5,7 +5,7 @@ import asyncio
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 from dotenv import load_dotenv
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Document
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Document, BotCommand
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 from indexer import OneDriveIndexer
 from query_logger import log_user_query, query_logger
@@ -145,6 +145,23 @@ class OneDriveBot:
         if was_queued:
             return f"✅ Bot is now online and ready!\n(Your command was received while bot was starting)\n\n{text}"
         return text
+
+    async def setup_commands(self):
+        """Set up the bot commands menu that appears in Telegram"""
+        commands = [
+            BotCommand(command="start", description="🚀 Start the bot and see welcome message"),
+            BotCommand(command="menu", description="📋 Open the main navigation menu"),
+            BotCommand(command="help", description="❓ Show help and available commands"),
+            BotCommand(command="about", description="ℹ️ About this bot and its features"),
+            BotCommand(command="privacy", description="🔒 View privacy policy"),
+            BotCommand(command="admin", description="⚙️ Admin panel (admin only)")
+        ]
+        
+        try:
+            await self.application.bot.set_my_commands(commands)
+            logger.info("Bot commands menu updated successfully")
+        except Exception as e:
+            logger.error(f"Error setting bot commands: {e}")
 
     # Command handlers
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -820,6 +837,9 @@ class OneDriveBot:
                 # Initialize application
                 await self.application.initialize()
                 await self.application.start()
+                
+                # Set up bot commands menu
+                await self.setup_commands()
                 
                 # Set startup time for pending message detection
                 from datetime import datetime, timezone

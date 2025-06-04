@@ -1,1 +1,29 @@
-[]
+[
+  {
+    "timestamp": "2025-06-04T02:43:12.085441",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Started browsing files from root",
+    "query_type": "browse_start",
+    "date": "2025-06-04",
+    "time": "02:43:12"
+  },
+  {
+    "timestamp": "2025-06-04T02:43:12.107806",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Browsed folder: University (path: root)",
+    "query_type": "browse_folder",
+    "date": "2025-06-04",
+    "time": "02:43:12"
+  },
+  {
+    "timestamp": "2025-06-04T02:43:13.759782",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Browsed folder: 1st Year 2nd Semester (path: 1st Year 2nd Semester)",
+    "query_type": "browse_folder",
+    "date": "2025-06-04",
+    "time": "02:43:13"
+  }
+]
