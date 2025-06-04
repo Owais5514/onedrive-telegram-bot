@@ -20,15 +20,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Try to import AI handler (optional)
-try:
-    from ai_handler_client import AIHandlerClient
-    AI_AVAILABLE = True
-except ImportError as e:
-    logger.warning(f"AI features not available: {e}")
-    AI_AVAILABLE = False
-    AIHandler = None
-
 class OneDriveBot:
     def __init__(self):
         self.token = os.getenv('TELEGRAM_BOT_TOKEN')
@@ -39,18 +30,6 @@ class OneDriveBot:
         
         # Initialize OneDrive indexer
         self.indexer = OneDriveIndexer()
-        
-        # Initialize AI handler (optional)
-        self.ai_handler = None
-        if AI_AVAILABLE:
-            try:
-                self.ai_handler = AIHandlerClient(server_url="http://localhost:8001")
-                # Start loading model in background
-                # AI handler client doesn't need background loading - server handles it
-                logger.info("AI handler initialized - using external model server")
-            except Exception as e:
-                logger.warning(f"Failed to initialize AI handler: {e}")
-                self.ai_handler = None
         
         # Callback data mapping to handle long file names (max 64 bytes for Telegram)
         self.callback_map = {}
@@ -68,8 +47,7 @@ class OneDriveBot:
         # Track bot startup time for pending message handling
         self.startup_time = None
         
-        # AI search state
-        self.waiting_for_ai_query = set()  # Track users waiting to input AI search query
+
         
         # Load data
         self.load_data()
@@ -174,10 +152,6 @@ class OneDriveBot:
         keyboard = [
             [InlineKeyboardButton("📁 Browse Files", callback_data="browse_root")]
         ]
-        
-        # Add AI search button if available
-        if self.ai_handler:
-            keyboard.append([InlineKeyboardButton("🤖 AI Search", callback_data="ai_search")])
         
         # Add refresh index button only for admin
         if update.effective_user.id == self.admin_id:
@@ -315,15 +289,6 @@ class OneDriveBot:
             except Exception as e:
                 logger.warning(f"Failed to log browse start activity: {e}")
             await self.show_folder_contents(query, "root")
-        elif data == "ai_search":
-            # Log AI search start
-            try:
-                user_id = query.from_user.id
-                username = query.from_user.username or f"user_{user_id}"
-                await log_user_query(user_id, username, "Started AI search session", "ai_search_start")
-            except Exception as e:
-                logger.warning(f"Failed to log AI search start activity: {e}")
-            await self.handle_ai_search_button(query)
         elif data == "refresh_index":
             await self.refresh_index(query)
         elif data == "main_menu":
@@ -350,353 +315,7 @@ class OneDriveBot:
             await self.show_folder_contents(query, path)
         elif data.startswith("admin_"):
             await self.handle_admin_action(query, data[6:])
-
-    async def handle_ai_search_button(self, query):
-        """Handle AI search button click"""
-        if not self.ai_handler:
-            await query.edit_message_text(
-                "❌ AI search is not available.\n"
-                "Please contact admin to enable AI features."
-            )
-            return
-        
-        # Add user to waiting list
-        user_id = query.from_user.id
-        self.waiting_for_ai_query.add(user_id)
-        
-        # Check model status for user feedback
-        status_text = ""
-        if await self.ai_handler.is_server_ready():
-            status_text = "🤖 AI model is ready for advanced search!\n\n"
-        else:
-            status_text = "🔄 AI model server is starting up...\n(Search will use smart fallback for now)\n\n"
-        
-        await query.edit_message_text(
-            f"{status_text}"
-            "Please type your search query in natural language.\n\n"
-            "Examples:\n"
-            "• \"Find math lectures from week 3\"\n"
-            "• \"EEE2203 assignment solutions\"\n"
-            "• \"CE1201 lab reports\"\n"
-            "• \"Physics quiz questions\"\n\n"
-            "Type your search query now:"
-        )
-
-    async def handle_ai_search_query(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle AI search text messages"""
-        user_id = update.effective_user.id
-        
-        # Check if user is waiting for AI query
-        if user_id not in self.waiting_for_ai_query:
-            return  # Not waiting for AI query, let other handlers process
-        
-        # Remove user from waiting list
-        self.waiting_for_ai_query.discard(user_id)
-        
-        if not self.ai_handler:
-            await update.message.reply_text(
-                "❌ AI search is not available.\n"
-                "Please contact admin to enable AI features."
-            )
-            return
-        
-        user_query = update.message.text.strip()
-        username = update.effective_user.username or f"user_{user_id}"
-        
-        # Log the AI search query
-        await log_user_query(user_id, username, user_query, "ai_search")
-        
-        # Send processing message
-        processing_msg = await update.message.reply_text("🤖 Processing your query with AI...")
-        
-        try:
-            # Get all file paths for search
-            all_file_paths = []
-            for path, items in self.indexer.file_index.items():
-                if isinstance(items, list):
-                    for item in items:
-                        if isinstance(item, dict) and item.get('type') == 'file':
-                            file_path = item.get('path', f"{path}/{item.get('name', '')}")
-                            all_file_paths.append(file_path)
             
-            # Process with enhanced AI search
-            explanation, search_results = await self.ai_handler.enhanced_search(user_query, all_file_paths)
-            
-            # Enrich search results with file details from indexer
-            enriched_results = []
-            for result in search_results:
-                result_path = result.get('path', '')
-                
-                # Find file details from indexer
-                file_details = None
-                for folder_path, folder_data in self.indexer.file_index.items():
-                    if isinstance(folder_data, list):
-                        for item in folder_data:
-                            if isinstance(item, dict) and item.get('path') == result_path:
-                                file_details = item
-                                break
-                    if file_details:
-                        break
-                
-                # Enrich result with file details
-                enriched_result = result.copy()
-                if file_details:
-                    enriched_result.update({
-                        'name': file_details.get('name', os.path.basename(result_path) or 'Unknown'),
-                        'size': file_details.get('size', 0),
-                        'type': file_details.get('type', 'file'),
-                        'relevance_score': result.get('score', 0)
-                    })
-                else:
-                    # Fallback values
-                    enriched_result.update({
-                        'name': os.path.basename(result_path) or 'Unknown',
-                        'size': 0,
-                        'type': 'file' if result.get('type') != 'folder' else 'folder',
-                        'relevance_score': result.get('score', 0)
-                    })
-                
-                enriched_results.append(enriched_result)
-            
-            # Separate files and folders from enriched results
-            file_results = [r for r in enriched_results if r.get('type') != 'folder']
-            folder_results = [r for r in enriched_results if r.get('type') == 'folder']
-            
-            # Format results
-            if file_results or folder_results:
-                results_text = f"🤖 **AI Search Results**\n{explanation}\n\n"
-                
-                # Log the AI search results for tracking
-                result_summary = f"AI search '{user_query}' returned {len(file_results)} files and {len(folder_results)} folders"
-                await log_user_query(user_id, username, result_summary, "ai_search_result")
-                
-                # Show folder recommendations first
-                if folder_results:
-                    results_text += f"📁 **Recommended Folders** ({len(folder_results)}):\n"
-                    for i, folder in enumerate(folder_results[:5], 1):
-                        results_text += f"{i}. 📂 {folder.get('name', os.path.basename(folder.get('path', '')) or 'Unknown')}\n"
-                        results_text += f"   📂 Path: {folder.get('path', 'Unknown')}\n"
-                        results_text += f"   🎯 Score: {folder.get('score', 0):.2f}\n\n"
-                
-                # Show file results
-                if file_results:
-                    results_text += f"📄 **File Results** ({len(file_results)} found):\n"
-                    for i, result in enumerate(file_results[:8], 1):  # Show top 8 files
-                        size_mb = result.get('size', 0) / (1024 * 1024) if result.get('size', 0) > 0 else 0
-                        results_text += f"{i}. 📄 {result.get('name', 'Unknown')}\n"
-                        results_text += f"   📂 Path: {result.get('path', 'Unknown')}\n"
-                        results_text += f"   💾 Size: {size_mb:.1f}MB | 🎯 Score: {result.get('relevance_score', 0):.2f}\n\n"
-                    
-                    if len(file_results) > 8:
-                        results_text += f"... and {len(file_results) - 8} more results"
-                
-                # Create buttons for top results
-                keyboard = []
-                
-                # Add folder buttons
-                for i, folder in enumerate(folder_results[:3]):
-                    folder_path = folder.get('path', '')
-                    folder_name = os.path.basename(folder_path) or folder_path
-                    callback_data = self.create_callback_data("folder", folder_path)
-                    keyboard.append([InlineKeyboardButton(
-                        f"📂 Open: {folder_name[:25]}...", 
-                        callback_data=callback_data
-                    )])
-                
-                # Add file download buttons
-                for i, result in enumerate(search_results[:3]):
-                    # Use path as identifier and try to find the actual file details
-                    result_path = result.get('path', f'result_{i}')
-                    result_name = os.path.basename(result_path) if result_path else f"File {i+1}"
-                    
-                    # Try to find the actual file in the index to get proper id
-                    file_id = f"ai_search_{i}"  # Fallback id
-                    for path, items in self.indexer.file_index.items():
-                        if isinstance(items, list):
-                            for item in items:
-                                if item.get('path') == result_path or (path + '/' + item.get('name', '')) == result_path:
-                                    file_id = item.get('id', f"ai_search_{i}")
-                                    break
-                    
-                    file_info = f"{file_id}_{result_name}"
-                    callback_data = self.create_callback_data("file", file_info)
-                    keyboard.append([InlineKeyboardButton(
-                        f"📥 Download: {result_name[:20]}...", 
-                        callback_data=callback_data
-                    )])
-                
-                keyboard.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                
-                await processing_msg.edit_text(results_text, reply_markup=reply_markup)
-            else:
-                await processing_msg.edit_text(
-                    f"{explanation}\n\n"
-                    "❌ No files found matching your query.\n\n"
-                    "Try:\n"
-                    "• Using different keywords\n"
-                    "• Being more specific about course codes\n"
-                    "• Checking file types (lecture, quiz, assignment)\n\n"
-                    "🏠 Return to main menu",
-                    reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")
-                    ]])
-                )
-                
-        except Exception as e:
-            logger.error(f"Error in AI search: {e}")
-            await processing_msg.edit_text(
-                f"❌ Error processing AI search: {e}\n\n"
-                "Please try again with a different query.",
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")
-                ]])
-            )
-
-    def search_files_by_keywords(self, keywords: List[str]) -> List[Dict]:
-        """Search files using keywords generated by AI"""
-        if not keywords:
-            return []
-        
-        results = []
-        
-        # Get all files from index
-        all_files = self.indexer.search_files("*")  # Get all files
-        
-        # Score and filter files based on keywords
-        for file_info in all_files:
-            score = 0
-            file_name_lower = file_info['name'].lower()
-            file_path_lower = file_info['path'].lower()
-            
-            # Calculate relevance score
-            for keyword in keywords:
-                keyword_lower = keyword.lower()
-                
-                # Exact match in filename gets highest score
-                if keyword_lower in file_name_lower:
-                    score += 10
-                
-                # Partial match in filename
-                elif any(keyword_lower in word for word in file_name_lower.split()):
-                    score += 5
-                
-                # Match in path
-                if keyword_lower in file_path_lower:
-                    score += 3
-            
-            # Only include files with some relevance
-            if score > 0:
-                file_info['relevance_score'] = score
-                results.append(file_info)
-        
-        # Sort by relevance score (highest first)
-        results.sort(key=lambda x: x['relevance_score'], reverse=True)
-        
-        return results
-
-    def enhanced_search_files_by_keywords(self, keywords: List[str], user_query: str) -> List[Dict]:
-        """Hybrid search: semantic, keyword, and fuzzy matching for files with better scoring"""
-        if not keywords:
-            return []
-        results = []
-        all_files = self.indexer.search_files("*")
-        user_query_lower = user_query.lower()
-        for file_info in all_files:
-            score = 0
-            file_name_lower = file_info['name'].lower()
-            file_path_lower = file_info['path'].lower()
-            # Keyword and partial matches
-            for keyword in keywords:
-                keyword_lower = keyword.lower()
-                if keyword_lower in file_name_lower:
-                    score += 12
-                elif any(keyword_lower in word for word in file_name_lower.split()):
-                    score += 6
-                if keyword_lower in file_path_lower:
-                    score += 4
-            # Fuzzy match (sequence similarity)
-            from difflib import SequenceMatcher
-            similarity = SequenceMatcher(None, user_query_lower, file_name_lower).ratio()
-            if similarity > 0.5:
-                score += int(similarity * 10)
-            # Bonus for subject or course code in path
-            for keyword in keywords:
-                if len(keyword) > 3 and keyword.lower() in file_path_lower:
-                    score += 2
-            if score > 0:
-                file_info['relevance_score'] = score
-                results.append(file_info)
-        results.sort(key=lambda x: x['relevance_score'], reverse=True)
-        return results
-    
-    def calculate_file_relevance_score(self, file_info: Dict, keywords: List[str], user_query: str) -> int:
-        """Calculate enhanced relevance score for a file"""
-        score = 0
-        file_name_lower = file_info['name'].lower()
-        file_path_lower = file_info['path'].lower()
-        query_lower = user_query.lower()
-        
-        # 1. Exact query phrase match (highest score)
-        if query_lower in file_name_lower:
-            score += 50
-        elif query_lower in file_path_lower:
-            score += 30
-        
-        # 2. Individual word matches in query
-        query_words = query_lower.split()
-        for word in query_words:
-            if len(word) > 2:  # Skip short words
-                if word in file_name_lower:
-                    score += 15
-                elif word in file_path_lower:
-                    score += 8
-        
-        # 3. Keyword matches with different weights
-        for keyword in keywords:
-            keyword_lower = keyword.lower()
-            
-            # Exact match in filename gets highest score
-            if keyword_lower == file_name_lower or keyword_lower in file_name_lower.split():
-                score += 20
-            # Partial match in filename
-            elif keyword_lower in file_name_lower:
-                score += 12
-            # Match in path
-            elif keyword_lower in file_path_lower:
-                score += 6
-            
-            # Fuzzy matching for typos and variations
-            from difflib import SequenceMatcher
-            similarity = SequenceMatcher(None, keyword_lower, file_name_lower).ratio()
-            if similarity > 0.7:  # 70% similarity
-                score += int(similarity * 10)
-        
-        # 4. File type boost
-        file_extension = file_info['name'].split('.')[-1].lower() if '.' in file_info['name'] else ''
-        if file_extension in ['pdf', 'doc', 'docx', 'ppt', 'pptx']:
-            score += 5
-        
-        # 5. Course code detection bonus
-        import re
-        course_patterns = [r'[A-Z]{2,4}\d{4}', r'[A-Z]{3}\d{3}', r'[A-Z]{4}\d{3}']
-        for pattern in course_patterns:
-            if re.search(pattern, file_name_lower.upper()) or re.search(pattern, query_lower.upper()):
-                score += 15
-        
-        # 6. Recent files bonus (based on modification date)
-        try:
-            from datetime import datetime, timedelta
-            if 'modified' in file_info:
-                modified_date = datetime.fromisoformat(file_info['modified'].replace('Z', '+00:00'))
-                days_old = (datetime.now(modified_date.tzinfo) - modified_date).days
-                if days_old < 30:  # Recent files get bonus
-                    score += max(5 - (days_old // 7), 1)  # 5 points for this week, decreasing
-        except:
-            pass  # Ignore date parsing errors
-        
-        return score
-
     async def show_folder_contents(self, query, path: str):
         """Show folder contents with navigation buttons"""
         contents = self.get_folder_contents(path)
@@ -1018,10 +637,6 @@ class OneDriveBot:
             [InlineKeyboardButton("📁 Browse Files", callback_data="browse_root")]
         ]
         
-        # Add AI search button if available
-        if self.ai_handler:
-            keyboard.append([InlineKeyboardButton("🤖 AI Search", callback_data="ai_search")])
-        
         # Add refresh index button only for admin
         if query.from_user.id == self.admin_id:
             keyboard.append([InlineKeyboardButton("🔄 Refresh Index", callback_data="refresh_index")])
@@ -1043,9 +658,6 @@ class OneDriveBot:
             "📂 Browse and download university files\n"
         )
         
-        if self.ai_handler:
-            welcome_text += "🤖 AI-powered search available\n"
-        
         if query.from_user.id == self.admin_id:
             welcome_text += "⚙️ Admin controls available\n"
             
@@ -1058,10 +670,6 @@ class OneDriveBot:
         keyboard = [
             [InlineKeyboardButton("📁 Browse Files", callback_data="browse_root")]
         ]
-        
-        # Add AI search button if available
-        if self.ai_handler:
-            keyboard.append([InlineKeyboardButton("🤖 AI Search", callback_data="ai_search")])
         
         # Add refresh index button only for admin
         if update.effective_user.id == self.admin_id:
@@ -1093,14 +701,12 @@ class OneDriveBot:
             "📋 Available Commands:\n"
             "• /start - Start the bot and show main menu\n"
             "• /menu - Show bot menu with options\n"
-            "• /ai_search - AI-powered file search\n"
             "• /help - Show this help message\n"
             "• /about - About this bot\n"
             "• /privacy - Privacy policy\n"
             "• /admin - Admin panel (admin only)\n\n"
             "🗂️ Navigation & Usage:\n"
             "• 📁 Browse Files - Explore university folders\n"
-            "• 🤖 AI Search - Natural language file search\n"
             "• ⬅️ Back - Navigate to parent folder\n"
             "• 🏠 Main Menu - Return to start screen\n"
             "• 🔄 Refresh - Update file index (admin only)\n\n"
@@ -1173,30 +779,6 @@ class OneDriveBot:
             reply_markup=reply_markup
         )
 
-    async def ai_search_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle /ai_search command"""
-        if not self.ai_handler:
-            await update.message.reply_text(
-                "❌ AI search is not available.\n"
-                "Please contact admin to enable AI features."
-            )
-            return
-        
-        # Add user to waiting list
-        user_id = update.effective_user.id
-        self.waiting_for_ai_query.add(user_id)
-        
-        await update.message.reply_text(
-            "🤖 AI Search Ready!\n\n"
-            "Please type your search query in natural language.\n\n"
-            "Examples:\n"
-            "• \"Find math lectures from week 3\"\n"
-            "• \"EEE2203 assignment solutions\"\n"
-            "• \"CE1201 lab reports\"\n"
-            "• \"Physics quiz questions\"\n\n"
-            "Type your search query now:"
-        )
-
     def run(self):
         """Run the bot"""
         # Initialize file index (load cached or build if necessary)
@@ -1218,18 +800,12 @@ class OneDriveBot:
         # Add handlers
         self.application.add_handler(CommandHandler("start", self.start_command))
         self.application.add_handler(CommandHandler("menu", self.menu_command))
-        self.application.add_handler(CommandHandler("ai_search", self.ai_search_command))
+
         self.application.add_handler(CommandHandler("help", self.help_command))
         self.application.add_handler(CommandHandler("about", self.about_command))
         self.application.add_handler(CommandHandler("privacy", self.privacy_command))
         self.application.add_handler(CommandHandler("admin", self.admin_command))
         self.application.add_handler(CallbackQueryHandler(self.button_callback))
-        
-        # Add message handler for AI search queries (must be after command handlers)
-        self.application.add_handler(MessageHandler(
-            filters.TEXT & ~filters.COMMAND, 
-            self.handle_ai_search_query
-        ))
         
         # Start polling
         logger.info("Starting bot...")
@@ -1275,10 +851,6 @@ class OneDriveBot:
                         await self.application.updater.stop()
                     await self.application.stop()
                     await self.application.shutdown()
-                    
-                    # Clean up AI resources
-                    if self.ai_handler:
-                        self.ai_handler.cleanup()
                     
                     # Stop periodic query logging commits and do final commit
                     query_logger.stop_periodic_commits()

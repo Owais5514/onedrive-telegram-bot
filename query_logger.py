@@ -64,7 +64,7 @@ class QueryLogger:
         except Exception as e:
             logger.warning(f"Git initialization failed: {e}")
     
-    def log_query(self, user_id: int, username: str, query: str, query_type: str = "ai_search") -> bool:
+    def log_query(self, user_id: int, username: str, query: str, query_type: str = "browse") -> bool:
         """Log a user query with timestamp"""
         try:
             timestamp = datetime.now()
@@ -107,19 +107,7 @@ class QueryLogger:
         # Format different query types differently for better readability
         query_type = query_entry['query_type']
         
-        if query_type == "ai_search":
-            log_line = (
-                f"[{query_entry['date']} {query_entry['time']}] "
-                f"🤖 AI SEARCH - User: {query_entry['username']} ({query_entry['user_id']}) | "
-                f"Query: \"{query_entry['query']}\"\n"
-            )
-        elif query_type == "ai_search_result":
-            log_line = (
-                f"[{query_entry['date']} {query_entry['time']}] "
-                f"📊 AI RESULT - User: {query_entry['username']} ({query_entry['user_id']}) | "
-                f"Result: {query_entry['query']}\n"
-            )
-        elif query_type == "browse_folder":
+        if query_type == "browse_folder":
             log_line = (
                 f"[{query_entry['date']} {query_entry['time']}] "
                 f"📁 BROWSE - User: {query_entry['username']} ({query_entry['user_id']}) | "
@@ -137,7 +125,7 @@ class QueryLogger:
                 f"⬇️ DOWNLOAD - User: {query_entry['username']} ({query_entry['user_id']}) | "
                 f"Action: {query_entry['query']}\n"
             )
-        elif query_type in ["ai_search_start", "browse_start"]:
+        elif query_type in ["browse_start"]:
             log_line = (
                 f"[{query_entry['date']} {query_entry['time']}] "
                 f"🎯 START - User: {query_entry['username']} ({query_entry['user_id']}) | "
@@ -434,7 +422,7 @@ class QueryLogger:
 # Global logger instance
 query_logger = QueryLogger()
 
-async def log_user_query(user_id: int, username: str, query: str, query_type: str = "ai_search"):
+async def log_user_query(user_id: int, username: str, query: str, query_type: str = "browse"):
     """Async wrapper for logging queries"""
     try:
         loop = asyncio.get_event_loop()

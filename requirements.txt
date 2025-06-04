@@ -4,12 +4,3 @@ requests==2.31.0
 python-dotenv==1.0.0
 asyncio==3.4.3
 aiofiles==23.2.1
-
-# AI dependencies (optional - for AI search feature)
-torch>=2.0.0
-transformers>=4.35.0
-fastapi>=0.104.0
-uvicorn>=0.24.0
-httpx>=0.25.0
-pydantic>=2.0.0
-accelerate>=0.20.0

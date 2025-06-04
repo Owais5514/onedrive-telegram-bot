@@ -7,15 +7,12 @@ A Python Telegram bot that provides access to OneDrive files and folders through
 🎯 **Core Features:**
 - Browse OneDrive files and folders through Telegram
 - Download files directly to chat
-- **AI-powered search** with context-aware results
 - Fast navigation with local file indexing
 - Real-time notifications for subscribers
 - Admin management tools
 
 🔧 **Technical Features:**
 - Microsoft Graph API integration
-- **AI Model Server** architecture for efficient search
-- **Hybrid search** (semantic, keyword, fuzzy matching)
 - Dynamic inline keyboards
 - Efficient file caching
 - Background process management
@@ -50,24 +47,8 @@ A Python Telegram bot that provides access to OneDrive files and folders through
    - Add credentials to `.env`
 
 4. **Run the bot:**
-
-   **Option 1: Simple startup (bot only)**
    ```bash
    python main.py
-   ```
-
-   **Option 2: Full AI-enabled startup (recommended)**
-   ```bash
-   # Terminal 1: Start AI model server
-   python model_server.py
-   
-   # Terminal 2: Start bot (waits for model server)
-   python main.py
-   ```
-
-   **Option 3: Managed startup (handles both services)**
-   ```bash
-   python run_bot.py
    ```
 
 ## Configuration
@@ -92,14 +73,6 @@ The bot expects a "University" folder in the root of the specified user's OneDri
 - `/help` - Show help information
 - `/about` - About the bot
 - `/privacy` - Privacy policy
-- `/ai_search` - **AI-powered file search**
-
-### AI Search
-The bot includes intelligent search capabilities:
-- **Semantic search**: Understands context and meaning
-- **Keyword matching**: Finds files by name and content
-- **Fuzzy matching**: Handles typos and partial matches
-- **Folder recommendations**: Suggests relevant directories
 
 ### Admin Commands
 - `/admin` - Admin panel (admin only)
@@ -117,51 +90,7 @@ The bot includes intelligent search capabilities:
 
 ## Architecture
 
-### AI Model Server
-The bot uses a modular architecture with a separate AI model server:
-
-- **`model_server.py`**: FastAPI server that loads and serves the AI model
-  - Loads DialoGPT-small model once at startup
-  - Provides HTTP API for text generation
-  - Handles model memory management efficiently
-  - Available at `http://localhost:8001`
-
-- **`ai_handler_client.py`**: Lightweight client for the bot
-  - Connects to model server via HTTP
-  - Implements hybrid search algorithms
-  - Handles file index processing
-  - No local model loading required
-
-### Benefits
-- **Resource Efficiency**: Model loads once, serves multiple requests
-- **Better Performance**: No startup delays for each bot restart
-- **Scalability**: Multiple bot instances can share one model server
-- **Development**: Easy testing and debugging
-
-## Deployment
-
-### Local Deployment
-
-**Option 1: Full AI Setup (Recommended)**
-```bash
-# Start model server (in background or separate terminal)
-python model_server.py &
-
-# Wait for model to load, then start bot
-python main.py
-```
-
-**Option 2: Managed Deployment**
-```bash
-# Automatically manages both services
-python run_bot.py
-```
-
-**Option 3: Bot Only (No AI search)**
-```bash
-# Basic functionality without AI features
-python main.py
-```
+### File Structure
 
 ### GitHub Actions (Cloud Deployment) 🚀
 
