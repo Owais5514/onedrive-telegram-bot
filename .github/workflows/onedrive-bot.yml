@@ -1,4 +1,4 @@
-name: OneDrive Telegram Bot with AI
+name: OneDrive Telegram Bot
 
 on:
   workflow_dispatch:
@@ -6,11 +6,10 @@ on:
       action:
         description: 'Action to perform'
         required: true
-        default: 'start_bot_with_ai'
+        default: 'start_bot'
         type: choice
         options:
-          - start_bot_with_ai
-          - start_bot_only
+          - start_bot
           - index_files
           - troubleshoot
       duration:
@@ -61,9 +60,6 @@ jobs:
         # Admin User ID (Telegram user ID for admin commands)
         ADMIN_USER_ID=${{ secrets.ADMIN_USER_ID }}
 
-        # Claude AI API (Optional - for AI file search)
-        CLAUDE_API_KEY=${{ secrets.CLAUDE_API_KEY }}
-
         # Optional: For debugging
         DEBUG=True
         EOF
@@ -71,30 +67,8 @@ jobs:
     - name: Run Bot Action
       run: |
         case "${{ github.event.inputs.action }}" in
-          "start_bot_with_ai")
-            echo "🤖 Starting OneDrive Telegram Bot with AI Model Server..."
-            echo "🧠 AI features will be fully enabled"
-            if [ "${{ github.event.inputs.duration }}" != "0" ]; then
-              echo "⏰ Bot will run for ${{ github.event.inputs.duration }} minutes"
-              # Run with timeout and proper signal handling using the managed launcher
-              timeout --signal=TERM --kill-after=60s "${{ github.event.inputs.duration }}m" python run_bot.py || {
-                exit_code=$?
-                if [ $exit_code -eq 124 ]; then
-                  echo "⏰ Bot stopped after ${{ github.event.inputs.duration }} minutes (timeout)"
-                elif [ $exit_code -eq 137 ]; then
-                  echo "🛑 Bot was forcefully terminated"
-                else
-                  echo "❌ Bot exited with code $exit_code"
-                fi
-              }
-            else
-              echo "🔄 Bot will run indefinitely until manually stopped"
-              python run_bot.py
-            fi
-            ;;
-          "start_bot_only")
-            echo "🤖 Starting OneDrive Telegram Bot (AI disabled)..."
-            echo "⚠️  AI features will be disabled"
+          "start_bot")
+            echo "🤖 Starting OneDrive Telegram Bot..."
             if [ "${{ github.event.inputs.duration }}" != "0" ]; then
               echo "⏰ Bot will run for ${{ github.event.inputs.duration }} minutes"
               # Run with timeout and proper signal handling

@@ -241,5 +241,68 @@
     "query_type": "large_file_link",
     "date": "2025-06-09",
     "time": "02:50:17"
+  },
+  {
+    "timestamp": "2025-06-09T03:14:38.313738",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Started browsing files from root",
+    "query_type": "browse_start",
+    "date": "2025-06-09",
+    "time": "03:14:38"
+  },
+  {
+    "timestamp": "2025-06-09T03:14:38.332237",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Browsed folder: Sharing (path: root)",
+    "query_type": "browse_folder",
+    "date": "2025-06-09",
+    "time": "03:14:38"
+  },
+  {
+    "timestamp": "2025-06-09T03:14:40.481797",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Browsed folder: 1st Year 1st Semester (path: 1st Year 1st Semester)",
+    "query_type": "browse_folder",
+    "date": "2025-06-09",
+    "time": "03:14:40"
+  },
+  {
+    "timestamp": "2025-06-09T03:14:42.141947",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Browsed folder: Exam Files (path: 1st Year 1st Semester/Exam Files)",
+    "query_type": "browse_folder",
+    "date": "2025-06-09",
+    "time": "03:14:42"
+  },
+  {
+    "timestamp": "2025-06-09T04:30:43.698426",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Started browsing files from root",
+    "query_type": "browse_start",
+    "date": "2025-06-09",
+    "time": "04:30:43"
+  },
+  {
+    "timestamp": "2025-06-09T04:30:43.741589",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Browsed folder: Sharing (path: root)",
+    "query_type": "browse_folder",
+    "date": "2025-06-09",
+    "time": "04:30:43"
+  },
+  {
+    "timestamp": "2025-06-09T04:30:45.826912",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Browsed folder: 1st Year 1st Semester (path: 1st Year 1st Semester)",
+    "query_type": "browse_folder",
+    "date": "2025-06-09",
+    "time": "04:30:45"
   }
 ]
