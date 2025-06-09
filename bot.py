@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Document
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 from indexer import OneDriveIndexer
-from query_logger import log_user_query, query_logger
+
 
 # Load environment variables
 load_dotenv()
@@ -28,8 +28,7 @@ class OneDriveBot:
         self.token = os.getenv('TELEGRAM_BOT_TOKEN')
         self.admin_id = int(os.getenv('ADMIN_USER_ID', '0'))
         
-        # Initialize query logger - uses global instance
-        logger.info("Query logger initialized")
+
         
         # Initialize OneDrive indexer
         self.indexer = OneDriveIndexer()
@@ -282,13 +281,6 @@ class OneDriveBot:
         data = query.data
         
         if data == "browse_root":
-            # Log root browsing activity
-            try:
-                user_id = query.from_user.id
-                username = query.from_user.username or f"user_{user_id}"
-                await log_user_query(user_id, username, "Started browsing files from root", "browse_start")
-            except Exception as e:
-                logger.warning(f"Failed to log browse start activity: {e}")
             await self.show_folder_contents(query, "root")
         elif data == "refresh_index":
             await self.refresh_index(query)
@@ -320,16 +312,6 @@ class OneDriveBot:
     async def show_folder_contents(self, query, path: str):
         """Show folder contents with navigation buttons"""
         contents = self.get_folder_contents(path)
-        
-        # Log folder browsing activity
-        try:
-            user_id = query.from_user.id
-            username = query.from_user.username or f"user_{user_id}"
-            folder_name = path.split("/")[-1] if path != "root" else "Sharing"
-            browse_action = f"Browsed folder: {folder_name} (path: {path})"
-            await log_user_query(user_id, username, browse_action, "browse_folder")
-        except Exception as e:
-            logger.warning(f"Failed to log folder browse activity: {e}")
         
         if not contents:
             await query.edit_message_text("📁 Empty folder or error loading contents.")
@@ -400,15 +382,6 @@ class OneDriveBot:
             return
             
         file_id, file_name = parts
-        
-        # Log file interaction
-        try:
-            user_id = query.from_user.id
-            username = query.from_user.username or f"user_{user_id}"
-            file_action = f"Viewed file details: {file_name} (ID: {file_id})"
-            await log_user_query(user_id, username, file_action, "file_view")
-        except Exception as e:
-            logger.warning(f"Failed to log file view activity: {e}")
         
         # Find file info to check size and get folder path
         file_details = None
@@ -485,14 +458,7 @@ class OneDriveBot:
             file_size = file_details.get('size', 0)
             file_size_mb = file_size / (1024 * 1024)
             
-            # Log download attempt
-            try:
-                user_id = query.from_user.id
-                username = query.from_user.username or f"user_{user_id}"
-                download_action = f"Download attempt: {file_name} ({file_size_mb:.1f}MB) from {current_folder_path}"
-                await log_user_query(user_id, username, download_action, "download_attempt")
-            except Exception as e:
-                logger.warning(f"Failed to log download attempt: {e}")
+
             
             # Handle large files (>50MB) with OneDrive link
             if file_size_mb > 50:
@@ -529,12 +495,7 @@ class OneDriveBot:
                     reply_markup=reply_markup
                 )
                 
-                # Log successful download
-                try:
-                    success_action = f"Successfully downloaded: {file_name} ({file_size_mb:.1f}MB) from {current_folder_path}"
-                    await log_user_query(user_id, username, success_action, "download_success")
-                except Exception as e:
-                    logger.warning(f"Failed to log download success: {e}")
+
                     
             else:
                 # Download failed - provide OneDrive link as fallback
@@ -570,12 +531,7 @@ class OneDriveBot:
                         reply_markup=reply_markup
                     )
                 
-                # Log download failure
-                try:
-                    failure_action = f"Download failed: {file_name} ({file_size_mb:.1f}MB) from {current_folder_path}"
-                    await log_user_query(user_id, username, failure_action, "download_failure")
-                except Exception as e:
-                    logger.warning(f"Failed to log download failure: {e}")
+
                     
         except Exception as e:
             logger.error(f"Error in download_and_send_file: {e}")
@@ -613,14 +569,7 @@ class OneDriveBot:
                     parse_mode='Markdown'
                 )
                 
-                # Log large file access
-                try:
-                    user_id = query.from_user.id
-                    username = query.from_user.username or f"user_{user_id}"
-                    download_action = f"Accessed large file link: {file_name} ({file_size_mb:.1f}MB) from {current_folder_path}"
-                    await log_user_query(user_id, username, download_action, "large_file_link")
-                except Exception as e:
-                    logger.warning(f"Failed to log large file access: {e}")
+
                     
             else:
                 # Fallback if download URL cannot be generated
@@ -969,9 +918,7 @@ class OneDriveBot:
                     await self.application.stop()
                     await self.application.shutdown()
                     
-                    # Stop periodic query logging commits and do final commit
-                    query_logger.stop_periodic_commits()
-                    query_logger.final_commit_and_push()
+
                     
                     logger.info("Bot shut down successfully")
                 except Exception as e:
