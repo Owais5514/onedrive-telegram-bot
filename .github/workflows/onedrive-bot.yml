@@ -11,7 +11,6 @@ on:
         options:
           - start_bot
           - index_files
-          - troubleshoot
       duration:
         description: 'Bot runtime duration (in minutes, 0 for indefinite)'
         required: false
@@ -90,10 +89,6 @@ jobs:
           "index_files")
             echo "📁 Running file indexer..."
             python indexer.py
-            ;;
-          "troubleshoot")
-            echo "🔍 Running troubleshoot script..."
-            python troubleshoot.py
             ;;
           *)
             echo "❌ Unknown action: ${{ github.event.inputs.action }}"
