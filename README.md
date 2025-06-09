@@ -53,6 +53,40 @@ A Python Telegram bot that provides access to OneDrive files and folders through
 
 ## Configuration
 
+### OneDrive Folder Configuration
+
+**📁 Easy Folder Configuration:**
+The bot can be easily configured to work with different OneDrive folders by editing `main.py`. 
+
+To change the folder location:
+1. Open `main.py`
+2. Modify the `ONEDRIVE_FOLDERS` array in the configuration section
+3. Restart the bot
+
+**Default Configuration:**
+```python
+ONEDRIVE_FOLDERS = ["Sharing"]  # Looks for "Sharing" folder in OneDrive root
+```
+
+**Custom Configuration Examples:**
+```python
+# Single custom folder
+ONEDRIVE_FOLDERS = ["Documents"]
+
+# Multiple folders (future expansion support)
+ONEDRIVE_FOLDERS = ["Sharing", "Public", "Archive"]
+```
+
+**📖 Detailed Configuration Guide:**
+See `FOLDER_CONFIG.md` for complete configuration options and examples.
+
+**🔍 Folder Discovery Tool:**
+Not sure what folders are available in your OneDrive? Run:
+```bash
+python discover_folders.py
+```
+This tool will list all folders in your OneDrive root and help you choose the right configuration.
+
 ### Environment Variables (.env)
 ```bash
 TELEGRAM_BOT_TOKEN=your_bot_token
@@ -64,7 +98,7 @@ TARGET_USER_ID=target_onedrive_user_id  # OneDrive user to access
 ```
 
 ### OneDrive Structure
-The bot expects a "Sharing" folder in the root of the specified user's OneDrive. All browsing starts from this folder.
+The bot searches for configured folders in the OneDrive root directory. By default, it looks for a "Sharing" folder, but this can be easily changed in `main.py`. See the folder configuration section above for details.
 
 ## Usage
 

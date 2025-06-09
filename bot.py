@@ -24,14 +24,25 @@ logger = logging.getLogger(__name__)
 # AI features removed - keeping bot lightweight and focused
 
 class OneDriveBot:
-    def __init__(self):
+    def __init__(self, onedrive_folders=None, folder_config=None):
         self.token = os.getenv('TELEGRAM_BOT_TOKEN')
         self.admin_id = int(os.getenv('ADMIN_USER_ID', '0'))
         
-
+        # Set default folder configuration if not provided
+        if onedrive_folders is None:
+            onedrive_folders = ["Sharing"]  # Default fallback
+        if folder_config is None:
+            folder_config = {
+                "case_sensitive": False,
+                "search_subfolders": False,
+                "require_all_folders": False
+            }
         
-        # Initialize OneDrive indexer
-        self.indexer = OneDriveIndexer()
+        # Initialize OneDrive indexer with folder configuration
+        self.indexer = OneDriveIndexer(
+            target_folders=onedrive_folders,
+            folder_config=folder_config
+        )
         
         # Callback data mapping to handle long file names (max 64 bytes for Telegram)
         self.callback_map = {}

@@ -25,8 +25,24 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class OneDriveIndexer:
-    def __init__(self):
-        """Initialize the OneDrive indexer with Azure credentials"""
+    def __init__(self, target_folders=None, folder_config=None):
+        """Initialize the OneDrive indexer with Azure credentials and folder configuration"""
+        # Set default configuration if not provided
+        if target_folders is None:
+            target_folders = ["Sharing"]  # Default fallback
+        if folder_config is None:
+            folder_config = {
+                "case_sensitive": False,
+                "search_subfolders": False,
+                "require_all_folders": False
+            }
+        
+        self.target_folders = target_folders
+        self.folder_config = folder_config
+        
+        logger.info(f"Configured to search for folders: {target_folders}")
+        logger.info(f"Folder search config: {folder_config}")
+        
         # Load environment variables
         self.client_id = os.getenv('AZURE_CLIENT_ID')
         self.client_secret = os.getenv('AZURE_CLIENT_SECRET')
@@ -96,11 +112,11 @@ class OneDriveIndexer:
             logger.error(f"Error getting access token: {e}")
         return None
 
-    def find_sharing_folder(self) -> Optional[Dict]:
-        """Find the Sharing folder in the target user's OneDrive root"""
+    def find_target_folders(self) -> List[Dict]:
+        """Find the target folders in the user's OneDrive root based on configuration"""
         token = self.get_access_token()
         if not token:
-            return None
+            return []
             
         try:
             headers = {"Authorization": f"Bearer {token}"}
@@ -109,24 +125,49 @@ class OneDriveIndexer:
             
             if response.status_code != 200:
                 logger.error(f"Error fetching root items: {response.text}")
-                return None
+                return []
                 
             root_items = response.json().get('value', [])
             logger.info(f"Found {len(root_items)} items in OneDrive root")
             
-            for item in root_items:
-                if item.get('name', '').lower() == 'sharing' and 'folder' in item:
-                    logger.info(f"Found Sharing folder: {item['name']}")
-                    return item
+            found_folders = []
+            available_folders = []
             
-            logger.error("Sharing folder not found")
-            available_folders = [item.get('name') for item in root_items if 'folder' in item]
+            for item in root_items:
+                if 'folder' in item:
+                    folder_name = item.get('name', '')
+                    available_folders.append(folder_name)
+                    
+                    # Check if this folder matches any of our target folders
+                    for target_folder in self.target_folders:
+                        if self.folder_config.get("case_sensitive", False):
+                            name_match = folder_name == target_folder
+                        else:
+                            name_match = folder_name.lower() == target_folder.lower()
+                        
+                        if name_match:
+                            logger.info(f"Found target folder: {folder_name}")
+                            found_folders.append(item)
+                            break
+            
             logger.info(f"Available folders: {available_folders}")
-            return None
+            logger.info(f"Found {len(found_folders)} target folders: {[f['name'] for f in found_folders]}")
+            
+            # Check if we meet the requirements
+            if self.folder_config.get("require_all_folders", False):
+                if len(found_folders) < len(self.target_folders):
+                    missing = set(self.target_folders) - set(f['name'] for f in found_folders)
+                    logger.error(f"Not all required folders found. Missing: {missing}")
+                    return []
+            elif not found_folders:
+                logger.error(f"None of the target folders found: {self.target_folders}")
+                return []
+            
+            return found_folders
             
         except Exception as e:
-            logger.error(f"Error finding Sharing folder: {e}")
-            return None
+            logger.error(f"Error finding target folders: {e}")
+            return []
 
     def index_folder(self, folder_id: str, path: str, depth: int = 0) -> bool:
         """Recursively index folder contents with depth tracking"""
@@ -215,16 +256,21 @@ class OneDriveIndexer:
         self.total_files = 0
         self.total_size = 0
         
-        # Find Sharing folder
-        sharing_folder = self.find_sharing_folder()
-        if not sharing_folder:
+        # Find target folders
+        target_folders = self.find_target_folders()
+        if not target_folders:
             return False
         
-        # Initialize index with Sharing folder as root
-        self.file_index = {'root': sharing_folder['id']}
+        # Initialize index with target folders
+        # For now, we'll use the first found folder as root for backward compatibility
+        # In the future, this could be expanded to support multiple root folders
+        primary_folder = target_folders[0]
+        self.file_index = {'root': primary_folder['id']}
+        
+        logger.info(f"Using primary folder '{primary_folder['name']}' as root")
         
         # Start recursive indexing
-        success = self.index_folder(sharing_folder['id'], 'root')
+        success = self.index_folder(primary_folder['id'], 'root')
         
         if success:
             self.save_index()
