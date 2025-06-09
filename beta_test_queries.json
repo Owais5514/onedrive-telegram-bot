@@ -313,5 +313,14 @@
     "query_type": "browse_folder",
     "date": "2025-06-09",
     "time": "04:42:04"
+  },
+  {
+    "timestamp": "2025-06-09T04:42:11.905132",
+    "user_id": 6919365169,
+    "username": "ANIKXRED",
+    "query": "Viewed file details: PHY 1105 L01-32.pdf (ID: 01O7M5HYMGXZ5C5A4CZVGI5MSBKRO5GA46)",
+    "query_type": "file_view",
+    "date": "2025-06-09",
+    "time": "04:42:11"
   }
 ]
