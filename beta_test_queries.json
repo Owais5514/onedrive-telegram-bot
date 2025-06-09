@@ -349,5 +349,14 @@
     "query_type": "file_view",
     "date": "2025-06-09",
     "time": "04:43:21"
+  },
+  {
+    "timestamp": "2025-06-09T04:43:22.253250",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Accessed large file link: MATH 1103 L01-32.pdf (67.0MB) from 1st Year 1st Semester/Lectures/Merged Lectures",
+    "query_type": "large_file_link",
+    "date": "2025-06-09",
+    "time": "04:43:22"
   }
 ]
