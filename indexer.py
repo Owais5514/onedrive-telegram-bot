@@ -96,8 +96,8 @@ class OneDriveIndexer:
             logger.error(f"Error getting access token: {e}")
         return None
 
-    def find_university_folder(self) -> Optional[Dict]:
-        """Find the University folder in the target user's OneDrive root"""
+    def find_sharing_folder(self) -> Optional[Dict]:
+        """Find the Sharing folder in the target user's OneDrive root"""
         token = self.get_access_token()
         if not token:
             return None
@@ -115,17 +115,17 @@ class OneDriveIndexer:
             logger.info(f"Found {len(root_items)} items in OneDrive root")
             
             for item in root_items:
-                if item.get('name', '').lower() == 'university' and 'folder' in item:
-                    logger.info(f"Found University folder: {item['name']}")
+                if item.get('name', '').lower() == 'sharing' and 'folder' in item:
+                    logger.info(f"Found Sharing folder: {item['name']}")
                     return item
             
-            logger.error("University folder not found")
+            logger.error("Sharing folder not found")
             available_folders = [item.get('name') for item in root_items if 'folder' in item]
             logger.info(f"Available folders: {available_folders}")
             return None
             
         except Exception as e:
-            logger.error(f"Error finding University folder: {e}")
+            logger.error(f"Error finding Sharing folder: {e}")
             return None
 
     def index_folder(self, folder_id: str, path: str, depth: int = 0) -> bool:
@@ -188,7 +188,7 @@ class OneDriveIndexer:
             return False
 
     def build_index(self, force_rebuild: bool = False) -> bool:
-        """Build complete file index from OneDrive University folder"""
+        """Build complete file index from OneDrive Sharing folder"""
         # Check if we should use cached index
         if not force_rebuild and os.path.exists(self.index_file) and os.path.exists(self.timestamp_file):
             try:
@@ -215,16 +215,16 @@ class OneDriveIndexer:
         self.total_files = 0
         self.total_size = 0
         
-        # Find University folder
-        university_folder = self.find_university_folder()
-        if not university_folder:
+        # Find Sharing folder
+        sharing_folder = self.find_sharing_folder()
+        if not sharing_folder:
             return False
         
-        # Initialize index with University folder as root
-        self.file_index = {'root': university_folder['id']}
+        # Initialize index with Sharing folder as root
+        self.file_index = {'root': sharing_folder['id']}
         
         # Start recursive indexing
-        success = self.index_folder(university_folder['id'], 'root')
+        success = self.index_folder(sharing_folder['id'], 'root')
         
         if success:
             self.save_index()

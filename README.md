@@ -64,7 +64,7 @@ TARGET_USER_ID=target_onedrive_user_id  # OneDrive user to access
 ```
 
 ### OneDrive Structure
-The bot expects a "University" folder in the root of the specified user's OneDrive. All browsing starts from this folder.
+The bot expects a "Sharing" folder in the root of the specified user's OneDrive. All browsing starts from this folder.
 
 ## Usage
 
@@ -196,8 +196,8 @@ python troubleshoot.py              # Test all components systematically
    - Verify TARGET_USER_ID is correct
    - Ensure application permissions (not delegated)
 
-2. **"University folder not found"**: 
-   - Ensure "University" folder exists in target user's OneDrive root
+2. **"Sharing folder not found"**: 
+   - Ensure "Sharing" folder exists in target user's OneDrive root
    - Check if TARGET_USER_ID has the correct OneDrive
 
 3. **Bot not responding**: 

@@ -25,5 +25,221 @@
     "query_type": "browse_folder",
     "date": "2025-06-04",
     "time": "02:43:13"
+  },
+  {
+    "timestamp": "2025-06-09T02:29:43.906985",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Started browsing files from root",
+    "query_type": "browse_start",
+    "date": "2025-06-09",
+    "time": "02:29:43"
+  },
+  {
+    "timestamp": "2025-06-09T02:29:43.999973",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Browsed folder: University (path: root)",
+    "query_type": "browse_folder",
+    "date": "2025-06-09",
+    "time": "02:29:43"
+  },
+  {
+    "timestamp": "2025-06-09T02:29:45.451959",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Browsed folder: 1st Year 1st Semester (path: 1st Year 1st Semester)",
+    "query_type": "browse_folder",
+    "date": "2025-06-09",
+    "time": "02:29:45"
+  },
+  {
+    "timestamp": "2025-06-09T02:29:46.886323",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Browsed folder: Sheets (path: 1st Year 1st Semester/Sheets)",
+    "query_type": "browse_folder",
+    "date": "2025-06-09",
+    "time": "02:29:46"
+  },
+  {
+    "timestamp": "2025-06-09T02:29:49.066904",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Viewed file details: Lecture 6.pdf (ID: 01O7M5HYN7ZEFFZCRPTRDIUUJU22R6A3ZJ)",
+    "query_type": "file_view",
+    "date": "2025-06-09",
+    "time": "02:29:49"
+  },
+  {
+    "timestamp": "2025-06-09T02:41:48.995191",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Browsed folder: Sharing (path: root)",
+    "query_type": "browse_folder",
+    "date": "2025-06-09",
+    "time": "02:41:48"
+  },
+  {
+    "timestamp": "2025-06-09T02:41:51.207160",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Browsed folder: 1st Year 1st Semester (path: 1st Year 1st Semester)",
+    "query_type": "browse_folder",
+    "date": "2025-06-09",
+    "time": "02:41:51"
+  },
+  {
+    "timestamp": "2025-06-09T02:41:52.862442",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Browsed folder: Cover Pages (path: 1st Year 1st Semester/Cover Pages)",
+    "query_type": "browse_folder",
+    "date": "2025-06-09",
+    "time": "02:41:52"
+  },
+  {
+    "timestamp": "2025-06-09T02:47:45.950557",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Started browsing files from root",
+    "query_type": "browse_start",
+    "date": "2025-06-09",
+    "time": "02:47:45"
+  },
+  {
+    "timestamp": "2025-06-09T02:47:45.969115",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Browsed folder: Sharing (path: root)",
+    "query_type": "browse_folder",
+    "date": "2025-06-09",
+    "time": "02:47:45"
+  },
+  {
+    "timestamp": "2025-06-09T02:47:47.754948",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Browsed folder: 1st Year 1st Semester (path: 1st Year 1st Semester)",
+    "query_type": "browse_folder",
+    "date": "2025-06-09",
+    "time": "02:47:47"
+  },
+  {
+    "timestamp": "2025-06-09T02:47:50.396526",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Browsed folder: Lectures (path: 1st Year 1st Semester/Lectures)",
+    "query_type": "browse_folder",
+    "date": "2025-06-09",
+    "time": "02:47:50"
+  },
+  {
+    "timestamp": "2025-06-09T02:47:53.114314",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Browsed folder: Merged Lectures (path: 1st Year 1st Semester/Lectures/Merged Lectures)",
+    "query_type": "browse_folder",
+    "date": "2025-06-09",
+    "time": "02:47:53"
+  },
+  {
+    "timestamp": "2025-06-09T02:47:56.118359",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Viewed file details: MATH 1103 L01-32.pdf (ID: 01O7M5HYKWKYRRFZRMRJGLIJ2N3V2J7RAB)",
+    "query_type": "file_view",
+    "date": "2025-06-09",
+    "time": "02:47:56"
+  },
+  {
+    "timestamp": "2025-06-09T02:47:57.800768",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Accessed large file link: MATH 1103 L01-32.pdf (67.0MB) from 1st Year 1st Semester/Lectures/Merged Lectures",
+    "query_type": "large_file_link",
+    "date": "2025-06-09",
+    "time": "02:47:57"
+  },
+  {
+    "timestamp": "2025-06-09T02:48:09.776438",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Browsed folder: Merged Lectures (path: 1st Year 1st Semester/Lectures/Merged Lectures)",
+    "query_type": "browse_folder",
+    "date": "2025-06-09",
+    "time": "02:48:09"
+  },
+  {
+    "timestamp": "2025-06-09T02:48:13.510229",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Viewed file details: CHEM 1107 L01-12 MS.pdf (ID: 01O7M5HYJCTXRUUUCAVZDKYNLWHOZLHXTE)",
+    "query_type": "file_view",
+    "date": "2025-06-09",
+    "time": "02:48:13"
+  },
+  {
+    "timestamp": "2025-06-09T02:50:06.467091",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Started browsing files from root",
+    "query_type": "browse_start",
+    "date": "2025-06-09",
+    "time": "02:50:06"
+  },
+  {
+    "timestamp": "2025-06-09T02:50:06.485267",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Browsed folder: Sharing (path: root)",
+    "query_type": "browse_folder",
+    "date": "2025-06-09",
+    "time": "02:50:06"
+  },
+  {
+    "timestamp": "2025-06-09T02:50:08.626244",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Browsed folder: 1st Year 1st Semester (path: 1st Year 1st Semester)",
+    "query_type": "browse_folder",
+    "date": "2025-06-09",
+    "time": "02:50:08"
+  },
+  {
+    "timestamp": "2025-06-09T02:50:12.082701",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Browsed folder: Lectures (path: 1st Year 1st Semester/Lectures)",
+    "query_type": "browse_folder",
+    "date": "2025-06-09",
+    "time": "02:50:12"
+  },
+  {
+    "timestamp": "2025-06-09T02:50:13.867482",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Browsed folder: Merged Lectures (path: 1st Year 1st Semester/Lectures/Merged Lectures)",
+    "query_type": "browse_folder",
+    "date": "2025-06-09",
+    "time": "02:50:13"
+  },
+  {
+    "timestamp": "2025-06-09T02:50:16.474871",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Viewed file details: MATH 1103 L01-32.pdf (ID: 01O7M5HYKWKYRRFZRMRJGLIJ2N3V2J7RAB)",
+    "query_type": "file_view",
+    "date": "2025-06-09",
+    "time": "02:50:16"
+  },
+  {
+    "timestamp": "2025-06-09T02:50:17.414369",
+    "user_id": 5759568708,
+    "username": "owais5514",
+    "query": "Accessed large file link: MATH 1103 L01-32.pdf (67.0MB) from 1st Year 1st Semester/Lectures/Merged Lectures",
+    "query_type": "large_file_link",
+    "date": "2025-06-09",
+    "time": "02:50:17"
   }
 ]
