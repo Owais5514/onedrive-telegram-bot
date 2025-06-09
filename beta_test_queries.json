@@ -322,5 +322,14 @@
     "query_type": "file_view",
     "date": "2025-06-09",
     "time": "04:42:11"
+  },
+  {
+    "timestamp": "2025-06-09T04:42:13.061959",
+    "user_id": 6919365169,
+    "username": "ANIKXRED",
+    "query": "Accessed large file link: PHY 1105 L01-32.pdf (55.3MB) from 1st Year 1st Semester/Lectures/Merged Lectures",
+    "query_type": "large_file_link",
+    "date": "2025-06-09",
+    "time": "04:42:13"
   }
 ]
