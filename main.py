@@ -20,7 +20,7 @@ from bot import OneDriveBot
 # See CONFIG_EXAMPLES.md for more examples
 ONEDRIVE_FOLDERS = [
     "Sharing",  # Primary folder name to look for
-    "AUST Resources",  # Example: uncomment to add more folders
+    # "AUST Resources",  # Example: uncomment to add more folders
     # "Public",     # Example: uncomment to add more folders
     # "Archive",    # Example: uncomment to add more folders
 ]

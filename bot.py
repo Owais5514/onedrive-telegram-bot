@@ -50,9 +50,13 @@ class OneDriveBot:
         
         # File paths
         self.users_file = 'unlimited_users.json'
+        self.feedback_file = 'feedback_log.txt'
         
         # Cache
         self.unlimited_users = set()
+        
+        # Feedback collection state
+        self.awaiting_feedback = set()  # Track users who are providing feedback
         
         # Shutdown flag
         self.shutdown_requested = False
@@ -172,7 +176,8 @@ class OneDriveBot:
         keyboard.extend([
             [InlineKeyboardButton("❓ Help", callback_data="show_help"),
              InlineKeyboardButton("ℹ️ About", callback_data="show_about")],
-            [InlineKeyboardButton("🔒 Privacy", callback_data="show_privacy")]
+            [InlineKeyboardButton("🔒 Privacy", callback_data="show_privacy"),
+             InlineKeyboardButton("📝 Feedback", callback_data="show_feedback")]
         ])
         
         if update.effective_user.id == self.admin_id:
@@ -207,6 +212,7 @@ class OneDriveBot:
             "• /help - Show this help message\n"
             "• /about - About this bot\n"
             "• /privacy - Privacy policy\n"
+            "• /feedback - Submit feedback or report issues\n"
             "• /admin - Admin panel (admin only)\n\n"
             "🗂️ Navigation & Usage:\n"
             "• 📁 Browse Files - Explore sharing folders\n"
@@ -264,6 +270,24 @@ class OneDriveBot:
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text(privacy_text, reply_markup=reply_markup)
 
+    async def feedback_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /feedback command"""
+        feedback_text = (
+            "📝 Feedback & Support\n\n"
+            "Your feedback helps improve this bot!\n\n"
+            "🐛 Found a bug?\n"
+            "💡 Have a suggestion?\n"
+            "❓ Need help with something?\n\n"
+            "Click the button below to submit your feedback."
+        )
+        
+        keyboard = [
+            [InlineKeyboardButton("📝 Submit Feedback", callback_data="submit_feedback")],
+            [InlineKeyboardButton("🔙 Back to Menu", callback_data="main_menu")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(feedback_text, reply_markup=reply_markup)
+
     async def admin_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /admin command (admin only)"""
         if update.effective_user.id != self.admin_id:
@@ -303,6 +327,10 @@ class OneDriveBot:
             await self.show_about_inline(query)
         elif data == "show_privacy":
             await self.show_privacy_inline(query)
+        elif data == "show_feedback":
+            await self.show_feedback_inline(query)
+        elif data == "submit_feedback":
+            await self.start_feedback_collection(query)
         elif data == "show_admin":
             await self.show_admin_inline(query)
         elif data.startswith("folder_"):
@@ -668,13 +696,22 @@ class OneDriveBot:
         if action == "rebuild":
             await query.edit_message_text("🔄 Rebuilding file index...")
             if self.indexer.build_index(force_rebuild=True):
-                await query.edit_message_text("✅ File index rebuilt successfully!")
+                keyboard = [[InlineKeyboardButton("🔙 Back to Admin Panel", callback_data="show_admin")],
+                           [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await query.edit_message_text("✅ File index rebuilt successfully!", reply_markup=reply_markup)
             else:
-                await query.edit_message_text("❌ Error rebuilding file index.")
+                keyboard = [[InlineKeyboardButton("🔙 Back to Admin Panel", callback_data="show_admin")],
+                           [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await query.edit_message_text("❌ Error rebuilding file index.", reply_markup=reply_markup)
                 
         elif action == "users":
             user_count = len(self.unlimited_users)
-            await query.edit_message_text(f"👥 Unlimited users: {user_count}")
+            keyboard = [[InlineKeyboardButton("🔙 Back to Admin Panel", callback_data="show_admin")],
+                       [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(f"👥 Unlimited users: {user_count}", reply_markup=reply_markup)
             
         elif action == "stats":
             try:
@@ -692,14 +729,17 @@ class OneDriveBot:
                     f"👥 Unlimited users: {len(self.unlimited_users)}\n"
                     f"📁 Total folders: {stats['total_folders']}\n"
                     f"📄 Total files: {stats['total_files']}\n"
-                    f"� Total size: {stats['total_size'] / (1024*1024*1024):.2f} GB\n"
+                    f"💾 Total size: {stats['total_size'] / (1024*1024*1024):.2f} GB\n"
                     f"🗂️ Indexed paths: {stats['total_paths']}\n"
-                    f"� Last index update: {timestamp_age}"
+                    f"🕐 Last index update: {timestamp_age}"
                 )
             except Exception as e:
                 stats_text = f"📊 Bot Statistics\n\n❌ Error loading stats: {e}"
-                
-            await query.edit_message_text(stats_text)
+            
+            keyboard = [[InlineKeyboardButton("🔙 Back to Admin Panel", callback_data="show_admin")],
+                       [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(stats_text, reply_markup=reply_markup)
             
         elif action == "shutdown":
             await query.edit_message_text("🛑 Shutting down bot...")
@@ -723,7 +763,8 @@ class OneDriveBot:
         keyboard.extend([
             [InlineKeyboardButton("❓ Help", callback_data="show_help"),
              InlineKeyboardButton("ℹ️ About", callback_data="show_about")],
-            [InlineKeyboardButton("🔒 Privacy", callback_data="show_privacy")]
+            [InlineKeyboardButton("🔒 Privacy", callback_data="show_privacy"),
+             InlineKeyboardButton("📝 Feedback", callback_data="show_feedback")]
         ])
         
         if query.from_user.id == self.admin_id:
@@ -757,7 +798,8 @@ class OneDriveBot:
         keyboard.extend([
             [InlineKeyboardButton("❓ Help", callback_data="show_help"),
              InlineKeyboardButton("ℹ️ About", callback_data="show_about")],
-            [InlineKeyboardButton("🔒 Privacy", callback_data="show_privacy")]
+            [InlineKeyboardButton("🔒 Privacy", callback_data="show_privacy"),
+             InlineKeyboardButton("📝 Feedback", callback_data="show_feedback")]
         ])
         
         if update.effective_user.id == self.admin_id:
@@ -782,6 +824,7 @@ class OneDriveBot:
             "• /help - Show this help message\n"
             "• /about - About this bot\n"
             "• /privacy - Privacy policy\n"
+            "• /feedback - Submit feedback or report issues\n"
             "• /admin - Admin panel (admin only)\n\n"
             "🗂️ Navigation & Usage:\n"
             "• 📁 Browse Files - Explore sharing folders\n"
@@ -857,6 +900,113 @@ class OneDriveBot:
             reply_markup=reply_markup
         )
 
+    async def show_feedback_inline(self, query):
+        """Show feedback options as inline message"""
+        feedback_text = (
+            "📝 Feedback & Support\n\n"
+            "Your feedback helps improve this bot!\n\n"
+            "🐛 Found a bug?\n"
+            "💡 Have a suggestion?\n"
+            "❓ Need help with something?\n\n"
+            "Click the button below to submit your feedback."
+        )
+        
+        keyboard = [
+            [InlineKeyboardButton("📝 Submit Feedback", callback_data="submit_feedback")],
+            [InlineKeyboardButton("🔙 Back to Menu", callback_data="main_menu")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(feedback_text, reply_markup=reply_markup)
+
+    async def start_feedback_collection(self, query):
+        """Start feedback collection process"""
+        user_id = query.from_user.id
+        self.awaiting_feedback.add(user_id)
+        
+        feedback_text = (
+            "📝 Submit Your Feedback\n\n"
+            "Please type your feedback message and send it.\n"
+            "You can report bugs, suggest improvements, or ask questions.\n\n"
+            "⚠️ Note: Your next message will be recorded as feedback."
+        )
+        
+        keyboard = [
+            [InlineKeyboardButton("❌ Cancel", callback_data="show_feedback")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(feedback_text, reply_markup=reply_markup)
+
+    async def handle_feedback_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle feedback messages from users"""
+        user_id = update.effective_user.id
+        
+        if user_id not in self.awaiting_feedback:
+            return  # Not waiting for feedback from this user
+        
+        # Remove user from waiting list
+        self.awaiting_feedback.discard(user_id)
+        
+        # Get feedback text
+        feedback_text = update.message.text
+        user_info = update.effective_user
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Save feedback to file
+        try:
+            feedback_entry = (
+                f"[{timestamp}] User: {user_info.first_name} "
+                f"({user_info.username or 'No username'}) ID: {user_id}\n"
+                f"Feedback: {feedback_text}\n"
+                f"{'='*50}\n\n"
+            )
+            
+            with open(self.feedback_file, 'a', encoding='utf-8') as f:
+                f.write(feedback_entry)
+                
+            logger.info(f"Feedback received from user {user_id}: {feedback_text[:100]}...")
+            
+            # Send confirmation to user
+            keyboard = [
+                [InlineKeyboardButton("🔙 Back to Menu", callback_data="main_menu")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(
+                "✅ Thank you for your feedback!\n\n"
+                "Your message has been recorded and will be reviewed by the admin.\n"
+                "We appreciate your input to help improve the bot!",
+                reply_markup=reply_markup
+            )
+            
+            # Notify admin about new feedback (if admin is different from user)
+            if user_id != self.admin_id and self.admin_id:
+                try:
+                    admin_notification = (
+                        f"📝 New Feedback Received\n\n"
+                        f"👤 From: {user_info.first_name} ({user_info.username or 'No username'})\n"
+                        f"🆔 User ID: {user_id}\n"
+                        f"🕐 Time: {timestamp}\n\n"
+                        f"💬 Message: {feedback_text}"
+                    )
+                    await context.bot.send_message(chat_id=self.admin_id, text=admin_notification)
+                except Exception as e:
+                    logger.error(f"Error notifying admin about feedback: {e}")
+                    
+        except Exception as e:
+            logger.error(f"Error saving feedback: {e}")
+            
+            # Send error message to user
+            keyboard = [
+                [InlineKeyboardButton("🔙 Back to Menu", callback_data="main_menu")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(
+                "❌ Error saving your feedback. Please try again later.\n"
+                "You can also contact the admin directly.",
+                reply_markup=reply_markup
+            )
+
     def run(self):
         """Run the bot"""
         # Initialize file index (load cached or build if necessary)
@@ -881,8 +1031,10 @@ class OneDriveBot:
         self.application.add_handler(CommandHandler("help", self.help_command))
         self.application.add_handler(CommandHandler("about", self.about_command))
         self.application.add_handler(CommandHandler("privacy", self.privacy_command))
+        self.application.add_handler(CommandHandler("feedback", self.feedback_command))
         self.application.add_handler(CommandHandler("admin", self.admin_command))
         self.application.add_handler(CallbackQueryHandler(self.button_callback))
+        self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_feedback_message))
         
         # Start polling
         logger.info("Starting bot...")
