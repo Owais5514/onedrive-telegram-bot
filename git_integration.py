@@ -48,8 +48,9 @@ class GitIndexManager:
             
         # Configure Git identity for automated commits
         commands = [
-            ['git', 'config', 'user.name', 'OneDrive Bot'],
-            ['git', 'config', 'user.email', 'bot@onedrive-telegram.local'],
+            ['git', 'config', 'user.name', 'OneDrive Bot Auto-Indexer'],
+            ['git', 'config', 'user.email', 'indexer@onedrive-telegram-bot.local'],
+            ['git', 'config', 'commit.gpgsign', 'false'],  # Disable GPG signing
         ]
         
         for cmd in commands:
