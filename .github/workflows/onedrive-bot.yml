@@ -32,6 +32,17 @@ jobs:
         fetch-depth: 0  # Full history for branch operations
         token: ${{ secrets.GITHUB_TOKEN }}  # Ensure push permissions
 
+    - name: Fetch index branch (if exists)
+      run: |
+        # Try to fetch the index-data branch if it exists
+        if git ls-remote --heads origin index-data | grep -q index-data; then
+          echo "📥 Fetching existing index-data branch..."
+          git fetch origin index-data:index-data
+          echo "✅ Index branch fetched"
+        else
+          echo "ℹ️ No index-data branch found, will create if needed"
+        fi
+
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
@@ -68,6 +79,13 @@ jobs:
         case "${{ github.event.inputs.action }}" in
           "start_bot")
             echo "🤖 Starting OneDrive Telegram Bot..."
+            echo "📊 Checking for existing index files..."
+            if [ -f "file_index.json" ]; then
+              echo "✅ Found existing index file ($(stat -c%s file_index.json) bytes)"
+            else
+              echo "ℹ️ No existing index file found, will build new index"
+            fi
+            
             if [ "${{ github.event.inputs.duration }}" != "0" ]; then
               echo "⏰ Bot will run for ${{ github.event.inputs.duration }} minutes"
               # Run with timeout and proper signal handling
@@ -88,13 +106,57 @@ jobs:
             ;;
           "index_files")
             echo "📁 Running file indexer..."
-            python indexer.py
+            python indexer.py --force
+            echo "📊 Index build completed"
+            if [ -f "file_index.json" ]; then
+              echo "✅ Index file created ($(stat -c%s file_index.json) bytes)"
+            fi
             ;;
           *)
             echo "❌ Unknown action: ${{ github.event.inputs.action }}"
             exit 1
             ;;
         esac
+
+    - name: Check and Commit Index Files
+      if: always()
+      run: |
+        echo "📊 Checking for updated index files..."
+        
+        # Check if index files exist and have been modified
+        if [ -f "file_index.json" ] && [ -f "index_timestamp.txt" ]; then
+          echo "✅ Index files found"
+          
+          # Get index file info
+          INDEX_SIZE=$(stat -c%s file_index.json)
+          TIMESTAMP_CONTENT=$(cat index_timestamp.txt)
+          TIMESTAMP_DATE=$(python3 -c "import datetime; print(datetime.datetime.fromtimestamp(float('$TIMESTAMP_CONTENT')).strftime('%Y-%m-%d %H:%M:%S UTC'))")
+          
+          echo "📄 Index file size: $INDEX_SIZE bytes"
+          echo "🕐 Index timestamp: $TIMESTAMP_DATE"
+          
+          # The Git integration in the indexer should have already committed these
+          # Let's verify if the index-data branch was created/updated
+          if git show-ref --verify --quiet refs/heads/index-data; then
+            echo "✅ Index-data branch exists"
+            
+            # Check if it was recently updated
+            LAST_COMMIT_DATE=$(git log -1 --format="%ci" index-data)
+            echo "📅 Last commit on index-data branch: $LAST_COMMIT_DATE"
+            
+            # Ensure the index-data branch is pushed
+            echo "📤 Ensuring index-data branch is up to date on remote..."
+            git push origin index-data --force-with-lease || {
+              echo "🔄 Force pushing index-data branch..."
+              git push origin index-data --force
+            }
+            echo "✅ Index-data branch synchronized with remote"
+          else
+            echo "⚠️ Index-data branch not found, Git integration may have failed"
+          fi
+        else
+          echo "ℹ️ No index files found to commit"
+        fi
 
     - name: Configure Git for Log Commits
       if: always()

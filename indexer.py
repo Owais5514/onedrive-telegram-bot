@@ -10,9 +10,18 @@ import json
 import logging
 import msal
 import requests
+import argparse
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 from dotenv import load_dotenv
+
+# Import Git integration for index persistence
+try:
+    from git_integration import git_manager
+    GIT_AVAILABLE = True
+except ImportError:
+    git_manager = None
+    GIT_AVAILABLE = False
 
 # Load environment variables
 load_dotenv()
@@ -92,6 +101,13 @@ class OneDriveIndexer:
         self.total_folders = 0
         self.total_files = 0
         self.total_size = 0
+        
+        # Git integration for index persistence
+        self.git_enabled = GIT_AVAILABLE and git_manager is not None
+        if self.git_enabled:
+            logger.info("Git integration enabled for index persistence")
+        else:
+            logger.info("Git integration not available")
 
     def get_access_token(self) -> Optional[str]:
         """Get valid access token for Microsoft Graph API"""
@@ -284,6 +300,12 @@ class OneDriveIndexer:
 
     def initialize_index(self) -> bool:
         """Initialize index by loading cached version or building if necessary"""
+        # Try to load from Git index branch first (GitHub Actions environment)
+        if self.git_enabled and git_manager.is_github_actions:
+            logger.info("GitHub Actions environment detected, trying to load index from Git...")
+            if git_manager.load_index_from_branch([self.index_file, self.timestamp_file]):
+                logger.info("Index files loaded from Git index branch")
+        
         # First try to load existing cached index
         if os.path.exists(self.index_file) and os.path.exists(self.timestamp_file):
             try:
@@ -330,6 +352,14 @@ class OneDriveIndexer:
                 f.write(str(datetime.now().timestamp()))
                 
             logger.info(f"Index saved to {self.index_file}")
+            
+            # Commit to Git if available and in GitHub Actions
+            if self.git_enabled and git_manager.is_github_actions:
+                logger.info("Committing index files to Git repository...")
+                if git_manager.commit_to_index_branch([self.index_file, self.timestamp_file]):
+                    logger.info("✅ Index files committed to Git repository")
+                else:
+                    logger.warning("⚠️ Failed to commit index files to Git repository")
             
         except Exception as e:
             logger.error(f"Error saving index: {e}")
