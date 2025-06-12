@@ -20,7 +20,7 @@ on:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 360  # 6 hours max
+    timeout-minutes: 720  # 12 hours max
     permissions:
       contents: write  # Allow pushing commits and branches
       actions: read    # Allow reading workflow context
