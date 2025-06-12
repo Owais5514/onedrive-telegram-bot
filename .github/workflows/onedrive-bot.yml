@@ -42,6 +42,15 @@ jobs:
         else
           echo "ℹ️ No index-data branch found, will create if needed"
         fi
+        
+        # Try to fetch the feedback-logs branch if it exists
+        if git ls-remote --heads origin feedback-logs | grep -q feedback-logs; then
+          echo "📥 Fetching existing feedback-logs branch..."
+          git fetch origin feedback-logs:feedback-logs
+          echo "✅ Feedback branch fetched"
+        else
+          echo "ℹ️ No feedback-logs branch found, will create if needed"
+        fi
 
     - name: Set up Python
       uses: actions/setup-python@v4
@@ -158,6 +167,65 @@ jobs:
           echo "ℹ️ No index files found to commit"
         fi
 
+    - name: Check and Commit Feedback Files  
+      if: always()
+      run: |
+        echo "📝 Checking for feedback files..."
+        
+        # Check if feedback file exists and has new content
+        if [ -f "feedback_log.txt" ]; then
+          echo "✅ Feedback log file found"
+          
+          # Get feedback file info
+          FEEDBACK_SIZE=$(stat -c%s feedback_log.txt)
+          echo "📄 Feedback file size: $FEEDBACK_SIZE bytes"
+          
+          # Check if file is not empty
+          if [ $FEEDBACK_SIZE -gt 0 ]; then
+            echo "📝 Feedback file contains data"
+            
+            # The Git integration in the bot should have already committed feedback in real-time
+            # Let's verify if there are any uncommitted feedback changes
+            if git diff --quiet feedback_log.txt 2>/dev/null; then
+              echo "ℹ️ No uncommitted feedback changes (already committed by bot)"
+            else
+              echo "⚠️ Found uncommitted feedback changes, committing now..."
+              
+              # Configure git for backup commit
+              git config user.name "GitHub Actions Feedback Bot"
+              git config user.email "feedback-bot@onedrive-telegram-bot.local" 
+              git config commit.gpgsign false
+              
+              # Commit any remaining feedback
+              git add -f feedback_log.txt
+              TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
+              git commit -m "Backup commit: feedback log - $TIMESTAMP" || echo "No changes to commit"
+              
+              # Push to main branch
+              git push origin main || echo "Push failed, may be up to date"
+            fi
+            
+            # Also check if feedback-logs branch was created/updated
+            if git show-ref --verify --quiet refs/heads/feedback-logs; then
+              echo "✅ Feedback-logs branch exists"
+              
+              # Ensure the feedback-logs branch is pushed
+              echo "📤 Ensuring feedback-logs branch is up to date on remote..."
+              git push origin feedback-logs --force-with-lease || {
+                echo "🔄 Force pushing feedback-logs branch..."
+                git push origin feedback-logs --force
+              }
+              echo "✅ Feedback-logs branch synchronized with remote"
+            else
+              echo "ℹ️ No dedicated feedback-logs branch (feedback committed to main branch)"
+            fi
+          else
+            echo "ℹ️ Feedback file is empty"
+          fi
+        else
+          echo "ℹ️ No feedback file found"
+        fi
+
     - name: Configure Git for Log Commits
       if: always()
       run: |
@@ -244,5 +312,7 @@ jobs:
         path: |
           *.log
           *.json
+          *.txt
           logs/
+          feedback_log.txt
         retention-days: 7

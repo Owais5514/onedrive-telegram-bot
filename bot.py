@@ -10,6 +10,14 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Documen
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 from indexer import OneDriveIndexer
 
+# Import Git integration for feedback persistence
+try:
+    from git_integration import git_manager
+    GIT_AVAILABLE = True
+except ImportError:
+    git_manager = None
+    GIT_AVAILABLE = False
+
 
 # Load environment variables
 load_dotenv()
@@ -58,6 +66,13 @@ class OneDriveBot:
         # Feedback collection state
         self.awaiting_feedback = set()  # Track users who are providing feedback
         
+        # Git integration for feedback persistence
+        self.git_enabled = GIT_AVAILABLE and git_manager is not None
+        if self.git_enabled:
+            logger.info("Git integration enabled for feedback persistence")
+        else:
+            logger.info("Git integration not available for feedback")
+        
         # Shutdown flag
         self.shutdown_requested = False
         
@@ -66,9 +81,16 @@ class OneDriveBot:
         
         # Load data
         self.load_data()
+
     def load_data(self):
         """Load cached data from files"""
         try:
+            # Load feedback from Git if available (GitHub Actions environment)
+            if self.git_enabled and git_manager.is_github_actions:
+                logger.info("GitHub Actions environment detected, checking for feedback from Git...")
+                if git_manager.load_feedback_from_branch([self.feedback_file]):
+                    logger.info("Feedback file loaded from Git branch")
+            
             if os.path.exists(self.users_file):
                 with open(self.users_file, 'r') as f:
                     self.unlimited_users = set(json.load(f))
@@ -965,6 +987,14 @@ class OneDriveBot:
                 
             logger.info(f"Feedback received from user {user_id}: {feedback_text[:100]}...")
             
+            # Commit feedback to Git repository if in GitHub Actions
+            if self.git_enabled and git_manager.is_github_actions:
+                logger.info("Committing feedback to Git repository...")
+                if await self._commit_feedback_to_git(user_info, feedback_text, timestamp):
+                    logger.info("✅ Feedback committed to Git repository")
+                else:
+                    logger.warning("⚠️ Failed to commit feedback to Git repository")
+            
             # Send confirmation to user
             keyboard = [
                 [InlineKeyboardButton("🔙 Back to Menu", callback_data="main_menu")]
@@ -1006,6 +1036,41 @@ class OneDriveBot:
                 "You can also contact the admin directly.",
                 reply_markup=reply_markup
             )
+
+    async def _commit_feedback_to_git(self, user_info, feedback_text, timestamp):
+        """Commit feedback to Git repository in real-time"""
+        try:
+            if not self.git_enabled:
+                return False
+            
+            # Configure Git for feedback commits
+            if not git_manager.configure_git():
+                logger.error("Failed to configure Git for feedback commit")
+                return False
+            
+            # Create commit message with feedback summary
+            sanitized_feedback = feedback_text.replace('\n', ' ').replace('\r', ' ')[:100]
+            if len(feedback_text) > 100:
+                sanitized_feedback += "..."
+            
+            commit_message = (
+                f"Add user feedback - {timestamp}\n\n"
+                f"From: {user_info.first_name} ({user_info.username or 'No username'})\n"
+                f"User ID: {user_info.id}\n"
+                f"Feedback: {sanitized_feedback}"
+            )
+            
+            # Use Git integration to commit feedback files
+            if git_manager.commit_feedback_files([self.feedback_file], commit_message):
+                logger.info("Feedback successfully committed to Git")
+                return True
+            else:
+                logger.warning("Git commit failed for feedback")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error committing feedback to Git: {e}")
+            return False
 
     def run(self):
         """Run the bot"""

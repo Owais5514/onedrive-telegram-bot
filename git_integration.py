@@ -244,5 +244,167 @@ class GitIndexManager:
             logger.error(f"Error loading from index branch: {e}")
             return False
 
+    def commit_feedback_files(self, files: List[str], commit_message: str) -> bool:
+        """Commit feedback files to the main branch in real-time"""
+        if not self.is_git_repo:
+            logger.warning("Not in a Git repository, cannot commit feedback files")
+            return False
+            
+        if not self.is_github_actions:
+            logger.info("Not running in GitHub Actions, skipping feedback commit")
+            return False
+            
+        try:
+            # Check if files exist
+            existing_files = [f for f in files if os.path.exists(f)]
+            if not existing_files:
+                logger.warning("No feedback files found to commit")
+                return False
+            
+            # Configure Git
+            if not self.configure_git():
+                return False
+            
+            # Make sure we're on main branch
+            current_branch = self._run_git_command(['git', 'branch', '--show-current'])
+            if current_branch != 'main':
+                if self._run_git_command(['git', 'checkout', 'main']) is None:
+                    logger.error("Failed to switch to main branch")
+                    return False
+            
+            # Add files (force add to bypass .gitignore)
+            add_cmd = ['git', 'add', '-f'] + existing_files
+            if self._run_git_command(add_cmd) is None:
+                logger.error("Failed to add feedback files to Git")
+                return False
+            
+            # Check if there are changes to commit
+            status_output = self._run_git_command(['git', 'status', '--porcelain'])
+            if not status_output:
+                logger.info("No new feedback changes to commit")
+                return True
+            
+            # Commit changes with detailed message
+            commit_cmd = ['git', 'commit', '-m', commit_message]
+            if self._run_git_command(commit_cmd) is None:
+                logger.error("Failed to commit feedback files")
+                return False
+            
+            logger.info(f"Feedback files committed: {', '.join(existing_files)}")
+            
+            # Push to remote immediately
+            return self._push_to_remote()
+            
+        except Exception as e:
+            logger.error(f"Error committing feedback files: {e}")
+            return False
+
+    def setup_feedback_branch(self) -> bool:
+        """Set up a dedicated branch for feedback files (alternative approach)"""
+        if not self.is_git_repo or not self.is_github_actions:
+            return False
+            
+        try:
+            # Configure Git
+            if not self.configure_git():
+                return False
+            
+            # Check if feedback branch exists
+            branch_exists = self._run_git_command(['git', 'show-ref', '--verify', '--quiet', 'refs/heads/feedback-logs'])
+            
+            if branch_exists is None:
+                # Create feedback branch from main
+                if self._run_git_command(['git', 'checkout', '-b', 'feedback-logs']) is None:
+                    return False
+                logger.info("Created new feedback-logs branch")
+            else:
+                # Switch to existing feedback branch
+                if self._run_git_command(['git', 'checkout', 'feedback-logs']) is None:
+                    return False
+                logger.info("Switched to existing feedback-logs branch")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error setting up feedback branch: {e}")
+            return False
+
+    def commit_to_feedback_branch(self, files: List[str], commit_message: str) -> bool:
+        """Commit feedback files to dedicated feedback branch"""
+        if not self.setup_feedback_branch():
+            return False
+            
+        try:
+            # Add feedback files
+            existing_files = [f for f in files if os.path.exists(f)]
+            if not existing_files:
+                logger.warning("No feedback files found to commit")
+                return False
+            
+            # Add files (force add to bypass .gitignore)
+            add_cmd = ['git', 'add', '-f'] + existing_files
+            if self._run_git_command(add_cmd) is None:
+                return False
+            
+            # Commit
+            if self._run_git_command(['git', 'commit', '-m', commit_message]) is None:
+                # No changes to commit
+                logger.info("No changes to commit to feedback branch")
+                return True
+            
+            # Push feedback branch
+            if self._run_git_command(['git', 'push', 'origin', 'feedback-logs']) is None:
+                logger.warning("Failed to push feedback branch")
+                return False
+            
+            logger.info("Feedback files committed to feedback-logs branch")
+            
+            # Switch back to main branch
+            self._run_git_command(['git', 'checkout', 'main'])
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error committing to feedback branch: {e}")
+            return False
+
+    def load_feedback_from_branch(self, files: List[str]) -> bool:
+        """Load feedback files from Git branch or main branch"""
+        if not self.is_git_repo:
+            return False
+            
+        try:
+            # First try to get files from feedback-logs branch if it exists
+            branch_exists = self._run_git_command(['git', 'show-ref', '--verify', '--quiet', 'refs/heads/feedback-logs'])
+            
+            if branch_exists is not None:
+                # Try to load from feedback-logs branch
+                for file in files:
+                    try:
+                        content = self._run_git_command(['git', 'show', f'feedback-logs:{file}'])
+                        if content is not None:
+                            with open(file, 'w') as f:
+                                f.write(content)
+                            logger.info(f"Loaded {file} from feedback-logs branch")
+                    except Exception as e:
+                        logger.warning(f"Could not load {file} from feedback-logs branch: {e}")
+            else:
+                # Try to load from main branch
+                for file in files:
+                    try:
+                        content = self._run_git_command(['git', 'show', f'main:{file}'])
+                        if content is not None:
+                            with open(file, 'w') as f:
+                                f.write(content)
+                            logger.info(f"Loaded {file} from main branch")
+                    except Exception as e:
+                        logger.warning(f"Could not load {file} from main branch: {e}")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error loading feedback from branch: {e}")
+            return False
+
 # Global instance
 git_manager = GitIndexManager()
