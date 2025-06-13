@@ -51,8 +51,7 @@ def main():
     def signal_handler(signum, frame):
         """Handle shutdown signals"""
         logger.info(f"Received signal {signum}, shutting down...")
-        if bot:
-            bot.shutdown_requested = True
+        # The bot will handle shutdown gracefully through the application framework
         sys.exit(0)
     
     # Register signal handlers

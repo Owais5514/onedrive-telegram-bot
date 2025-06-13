@@ -73,9 +73,6 @@ class OneDriveBot:
         else:
             logger.info("Git integration not available for feedback")
         
-        # Shutdown flag
-        self.shutdown_requested = False
-        
         # Track bot startup time for pending message handling
         self.startup_time = None
         
@@ -355,6 +352,13 @@ class OneDriveBot:
             await self.start_feedback_collection(query)
         elif data == "show_admin":
             await self.show_admin_inline(query)
+        elif data == "noop":
+            pass  # Do nothing for page indicator
+        elif data.startswith("page_"):
+            page_info = self.resolve_callback_data(data)
+            path, page_str = page_info.split(":", 1)
+            page = int(page_str)
+            await self.show_folder_contents(query, path, page)
         elif data.startswith("folder_"):
             path = self.resolve_callback_data(data)
             await self.show_folder_contents(query, path)
@@ -370,47 +374,76 @@ class OneDriveBot:
         elif data.startswith("admin_"):
             await self.handle_admin_action(query, data[6:])
 
-    async def show_folder_contents(self, query, path: str):
-        """Show folder contents with navigation buttons"""
+    async def show_folder_contents(self, query, path: str, page: int = 0):
+        """Show folder contents with navigation buttons and pagination"""
         contents = self.get_folder_contents(path)
         
-        if not contents:
-            await query.edit_message_text("📁 Empty folder or error loading contents.")
-            return
-        
         keyboard = []
+        folders = []
+        files = []
         
-        # Add folder and file buttons first
-        folders = [item for item in contents if item['type'] == 'folder']
-        files = [item for item in contents if item['type'] == 'file']
+        if contents:
+            folders = [item for item in contents if item['type'] == 'folder']
+            files = [item for item in contents if item['type'] == 'file']
         
-        # Add folders first
-        for folder in folders[:10]:  # Limit to prevent message too long
-            folder_path = f"{path}/{folder['name']}" if path != "root" else folder['name']
-            callback_data = self.create_callback_data("folder", folder_path)
+        # Pagination settings
+        items_per_page = 8
+        total_folders = len(folders)
+        total_files = len(files)
+        total_items = total_folders + total_files
+        
+        # Calculate pagination for combined items
+        start_idx = page * items_per_page
+        end_idx = start_idx + items_per_page
+        
+        # Combine folders and files for pagination
+        all_items = folders + files
+        page_items = all_items[start_idx:end_idx]
+        
+        # Add items for current page
+        for item in page_items:
+            if item['type'] == 'folder':
+                folder_path = f"{path}/{item['name']}" if path != "root" else item['name']
+                callback_data = self.create_callback_data("folder", folder_path)
+                keyboard.append([InlineKeyboardButton(
+                    f"📁 {item['name']}", 
+                    callback_data=callback_data
+                )])
+            else:  # file
+                size_mb = item.get('size', 0) / (1024 * 1024) if item.get('size', 0) > 0 else 0
+                file_id = item.get('id', item.get('path', item.get('name', f'file_{len(keyboard)}')))
+                file_info = f"{file_id}_{item.get('name', 'unknown')}"
+                callback_data = self.create_callback_data("file", file_info)
+                keyboard.append([InlineKeyboardButton(
+                    f"📄 {item['name']} ({size_mb:.1f}MB)", 
+                    callback_data=callback_data
+                )])
+        
+        # Add pagination buttons if needed
+        total_pages = (total_items + items_per_page - 1) // items_per_page if total_items > 0 else 0
+        if total_pages > 1:
+            pagination_row = []
             
-            keyboard.append([InlineKeyboardButton(
-                f"📁 {folder['name']}", 
-                callback_data=callback_data
-            )])
-        
-        # Add files
-        for file in files[:10]:  # Limit to prevent message too long
-            size_mb = file.get('size', 0) / (1024 * 1024) if file.get('size', 0) > 0 else 0
-            # Use path or name as identifier, fallback to index if neither available
-            file_id = file.get('id', file.get('path', file.get('name', f'file_{len(keyboard)}')))
-            file_info = f"{file_id}_{file.get('name', 'unknown')}"
-            callback_data = self.create_callback_data("file", file_info)
+            # Previous page button
+            if page > 0:
+                prev_callback = self.create_callback_data("page", f"{path}:{page-1}")
+                pagination_row.append(InlineKeyboardButton("⬅️ Prev", callback_data=prev_callback))
             
-            keyboard.append([InlineKeyboardButton(
-                f"📄 {file['name']} ({size_mb:.1f}MB)", 
-                callback_data=callback_data
-            )])
+            # Page indicator
+            pagination_row.append(InlineKeyboardButton(f"{page + 1}/{total_pages}", callback_data="noop"))
+            
+            # Next page button
+            if page < total_pages - 1:
+                next_callback = self.create_callback_data("page", f"{path}:{page+1}")
+                pagination_row.append(InlineKeyboardButton("Next ➡️", callback_data=next_callback))
+            
+            keyboard.append(pagination_row)
+        
         
         # Add navigation buttons at the bottom in three columns
         bottom_row = []
         
-        # Back button (left column)
+        # Back button (left column) - always show back button
         if path != "root":
             parent_path = "/".join(path.split("/")[:-1]) if "/" in path else "root"
             back_callback = self.create_callback_data("back", parent_path)
@@ -431,7 +464,21 @@ class OneDriveBot:
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         folder_name = path.split("/")[-1] if path != "root" else "Sharing"
-        text = f"📁 Current folder: {folder_name}\n\n📊 {len(folders)} folders, {len(files)} files"
+        
+        # Build status text
+        if total_items == 0:
+            status_text = "📁 Empty folder"
+        else:
+            if page > 0:
+                showing_start = start_idx + 1
+                showing_end = min(end_idx, total_items)
+                status_text = f"📊 Showing {showing_start}-{showing_end} of {total_items} items"
+                if total_folders > 0 and total_files > 0:
+                    status_text += f" ({total_folders} folders, {total_files} files)"
+            else:
+                status_text = f"📊 {total_folders} folders, {total_files} files"
+        
+        text = f"📁 Current folder: {folder_name}\n\n{status_text}"
         
         await query.edit_message_text(text, reply_markup=reply_markup)
 
@@ -766,10 +813,11 @@ class OneDriveBot:
         elif action == "shutdown":
             await query.edit_message_text("🛑 Shutting down bot...")
             await self.notify_subscribers("🔴 Bot Ended Operations")
-            # Set shutdown flag and stop application
-            self.shutdown_requested = True
+            # Stop the application - this will trigger the shutdown process
             await self.application.stop()
             await self.application.shutdown()
+            import os
+            os._exit(0)  # Force exit since we're in a callback
 
     async def show_main_menu(self, query):
         """Show the main menu"""
@@ -1104,60 +1152,36 @@ class OneDriveBot:
         # Start polling
         logger.info("Starting bot...")
         
-        # Run bot with proper shutdown handling
-        import signal
-        import asyncio
-        
-        async def run_bot():
-            """Run the bot with proper shutdown handling"""
-            try:
-                # Initialize application
-                await self.application.initialize()
-                await self.application.start()
-                
-                # Set startup time for pending message detection
-                from datetime import datetime, timezone
-                self.startup_time = datetime.now(timezone.utc)
-                
-                # Send startup notification
-                await self.notify_subscribers("🟢 Bot Started Operations")
-                
-                # Start polling with pending updates handling
-                # Process pending updates but limit to recent ones to avoid spam/flooding
-                await self.application.updater.start_polling(
-                    drop_pending_updates=False,
-                    allowed_updates=['message', 'callback_query']
-                )
-                
-                # Brief delay to allow pending messages to be processed
-                await asyncio.sleep(2)
-                
-                # Keep running until shutdown is requested
-                while not self.shutdown_requested:
-                    await asyncio.sleep(1)
-                    
-            except Exception as e:
-                logger.error(f"Error running bot: {e}")
-            finally:
-                # Clean shutdown
-                try:
-                    if hasattr(self.application, 'updater') and self.application.updater.running:
-                        await self.application.updater.stop()
-                    await self.application.stop()
-                    await self.application.shutdown()
-                    
-
-                    
-                    logger.info("Bot shut down successfully")
-                except Exception as e:
-                    logger.error(f"Error during shutdown: {e}")
-        
-        # Run the bot
+        # Run bot with proper python-telegram-bot 20.x API
         try:
-            asyncio.run(run_bot())
+            # Set startup time for pending message detection
+            from datetime import datetime, timezone
+            self.startup_time = datetime.now(timezone.utc)
+            
+            # Send startup notification on first run
+            async def post_init(application):
+                """Post initialization hook to send startup notification"""
+                try:
+                    await self.notify_subscribers("🟢 Bot Started Operations")
+                except Exception as e:
+                    logger.error(f"Error sending startup notification: {e}")
+            
+            # Add post init hook
+            self.application.post_init = post_init
+            
+            # Run polling - this handles all the async setup and cleanup automatically
+            self.application.run_polling(
+                drop_pending_updates=False,
+                allowed_updates=['message', 'callback_query'],
+                close_loop=False
+            )
+            
         except KeyboardInterrupt:
             logger.info("Bot stopped by KeyboardInterrupt")
-            self.shutdown_requested = True
+        except Exception as e:
+            logger.error(f"Error running bot: {e}")
+        finally:
+            logger.info("Bot shutdown complete")
 
 if __name__ == "__main__":
     bot = OneDriveBot()
