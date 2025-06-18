@@ -1,5 +1,7 @@
 # Environment variables
 .env
+.env.local
+.env.render.filled
 
 # Archive and backup files
 archive/
@@ -142,3 +144,7 @@ Desktop.ini
 
 # Logs
 *.log
+
+# Render deployment files (if containing secrets)
+# render.yaml should be committed, but keep local overrides private
+render.local.yaml

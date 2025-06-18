@@ -145,6 +145,37 @@ This repository includes GitHub Actions workflows for automated cloud deployment
 
 **📖 Complete Guide:** See [GITHUB_ACTIONS.md](GITHUB_ACTIONS.md) for detailed setup instructions, security best practices, and troubleshooting.
 
+### Render Deployment (Recommended) 🚀
+
+Deploy your bot as a web service on Render.com with webhook support:
+
+**✅ Benefits:**
+- Free tier available
+- Automatic HTTPS 
+- Zero-downtime deployments
+- Built-in health checks
+- Always-on (paid tier)
+
+**⚡ Quick Setup:**
+1. Fork this repository to GitHub
+2. Create a new Web Service on [Render](https://render.com)
+3. Connect your GitHub repository
+4. Add environment variables in Render dashboard
+5. Deploy with: `python app.py`
+
+**🌐 Features:**
+- Webhook-based (faster than polling)
+- Health check endpoint: `/health`
+- Auto-scaling and monitoring
+- Direct deployment from GitHub
+
+**📖 Complete Guide:** See [RENDER_DEPLOYMENT.md](RENDER_DEPLOYMENT.md) for detailed setup instructions, configuration options, and troubleshooting.
+
+**🔧 Files for Render:**
+- `app.py` - Render-optimized bot launcher
+- `render.yaml` - Service configuration
+- `.env.render` - Environment template
+
 ### Docker Deployment (Optional)
 ```bash
 # Build and run with Docker
