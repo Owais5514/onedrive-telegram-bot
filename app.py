@@ -82,10 +82,17 @@ class OneDriveBotRender(OneDriveBot):
             # Create application for webhook mode
             logger.info("Creating Telegram application for webhook mode...")
             
-            # Use the simpler approach - just create the application without specifying updater
-            # The application will handle webhook vs polling based on how we use it
-            self.application = Application.builder().token(self.token).build()
-            logger.info("Telegram application created successfully")
+            # For webhook mode, we need to create the application without an updater
+            # This bypasses the problematic Updater creation that's causing the error
+            from telegram import Bot
+            from telegram.ext import Application
+            
+            # Create bot instance
+            bot = Bot(token=self.token)
+            
+            # Create application without updater (webhook mode)
+            self.application = Application.builder().bot(bot).updater(None).build()
+            logger.info("Telegram application created successfully for webhook mode")
             
             # Add handlers
             logger.info("Adding command handlers...")
