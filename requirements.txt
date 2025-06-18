@@ -13,6 +13,9 @@ python-dotenv==1.0.0
 # Async File Operations (used for file handling)
 aiofiles==23.2.1
 
+# Webhook support (for webhook method)
+aiohttp==3.9.1
+
 # Additional dependencies that may be needed
 # asyncio - part of Python standard library (Python 3.7+)
 # json - part of Python standard library
