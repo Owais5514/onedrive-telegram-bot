@@ -1,0 +1,42 @@
+services:
+  - type: web
+    name: onedrive-telegram-bot
+    env: python
+    plan: starter  # Change to 'standard' or higher for production
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12"
+      - key: PORT
+        fromService:
+          type: web
+          name: onedrive-telegram-bot
+          property: port
+    # Environment variables (add these in Render dashboard or via .env)
+    # TELEGRAM_BOT_TOKEN=your_bot_token_here
+    # ADMIN_USER_ID=your_telegram_user_id
+    # AZURE_CLIENT_ID=your_azure_client_id
+    # AZURE_CLIENT_SECRET=your_azure_client_secret
+    # AZURE_TENANT_ID=your_azure_tenant_id
+    # TARGET_USER_ID=target_onedrive_user_id
+    
+    # Health check endpoint
+    healthCheckPath: /health
+    
+    # Auto-deploy settings
+    autoDeploy: true
+    
+    # Persistent disk for caching (optional but recommended)
+    # disk:
+    #   name: bot-cache
+    #   mountPath: /opt/render/project/src/cache
+    #   sizeGB: 1
+
+# Optional: Add a database service for more advanced caching
+# - type: pserv
+#   name: bot-database
+#   env: postgresql
+#   plan: starter
+#   databaseName: bot_db
+#   databaseUser: bot_user
