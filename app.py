@@ -79,19 +79,13 @@ class OneDriveBotRender(OneDriveBot):
             stats = self.indexer.get_stats()
             logger.info(f"Index ready: {stats['total_folders']} folders, {stats['total_files']} files")
             
-            # Create application builder with webhook-specific configuration
-            logger.info("Creating Telegram application builder...")
-            builder = Application.builder()
-            builder.token(self.token)
+            # Create application for webhook mode
+            logger.info("Creating Telegram application for webhook mode...")
             
-            # Configure for webhook mode (disable updater/polling completely)
-            logger.info("Configuring application for webhook mode...")
-            builder.updater(None)  # Disable the updater for webhook mode
-            
-            # Build the application
-            logger.info("Building Telegram application...")
-            self.application = builder.build()
-            logger.info("Telegram application built successfully")
+            # Use the simpler approach - just create the application without specifying updater
+            # The application will handle webhook vs polling based on how we use it
+            self.application = Application.builder().token(self.token).build()
+            logger.info("Telegram application created successfully")
             
             # Add handlers
             logger.info("Adding command handlers...")
@@ -115,6 +109,8 @@ class OneDriveBotRender(OneDriveBot):
             
         except Exception as e:
             logger.error(f"Error setting up application: {e}")
+            import traceback
+            traceback.print_exc()
             return False
         
     async def webhook_handler(self, request: Request) -> Response:
@@ -251,6 +247,7 @@ class OneDriveBotRender(OneDriveBot):
     
     async def run_webhook(self):
         """Run bot with webhook method on Render"""
+        runner = None
         try:
             logger.info("Starting OneDrive Telegram Bot on Render...")
             
@@ -260,21 +257,27 @@ class OneDriveBotRender(OneDriveBot):
                 return
             
             # Initialize and start application
+            logger.info("Initializing Telegram application...")
             await self.application.initialize()
+            
+            logger.info("Starting Telegram application...")
             await self.application.start()
             
             # Send startup notification
             try:
+                logger.info("Sending startup notification...")
                 await self.notify_subscribers("🟢 Bot Started (Render Webhook Mode)")
             except Exception as e:
                 logger.error(f"Error sending startup notification: {e}")
             
             # Set up webhook
+            logger.info("Setting up webhook...")
             if not await self.setup_webhook():
                 logger.error("Failed to set up webhook")
                 return
             
             # Create web application
+            logger.info("Creating web application...")
             self.web_app = self.create_web_app()
             
             # Start web server
@@ -299,16 +302,24 @@ class OneDriveBotRender(OneDriveBot):
             
         except Exception as e:
             logger.error(f"Error running webhook: {e}")
+            import traceback
+            traceback.print_exc()
             raise
         finally:
             # Cleanup
+            logger.info("Starting cleanup...")
             try:
                 if hasattr(self, 'application') and self.application:
+                    logger.info("Removing webhook...")
                     await self.remove_webhook()
+                    logger.info("Stopping application...")
                     await self.application.stop()
+                    logger.info("Shutting down application...")
                     await self.application.shutdown()
-                if hasattr(self, 'web_app') and self.web_app:
+                if runner:
+                    logger.info("Cleaning up web runner...")
                     await runner.cleanup()
+                logger.info("Cleanup completed")
             except Exception as e:
                 logger.error(f"Error during cleanup: {e}")
     
