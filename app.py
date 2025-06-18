@@ -58,13 +58,60 @@ class OneDriveBotRender(OneDriveBot):
         
         # No SSL configuration needed - Render handles HTTPS automatically
         self.web_app = None
+        self.application = None  # Initialize to None, will be set up later
         
         logger.info(f"Render Bot initialized - Port: {self.port}")
         logger.info(f"Webhook URL: {self.webhook_url}{self.webhook_path}")
+    
+    def setup_application(self):
+        """Set up the Telegram application (separate from parent's setup_bot method)"""
+        if not self.token:
+            logger.error("TELEGRAM_BOT_TOKEN not found")
+            return False
+            
+        try:
+            # Initialize indexer first
+            logger.info("Building OneDrive file index...")
+            if not self.indexer.build_index():
+                logger.error("Failed to build initial index")
+                return False
+                
+            stats = self.indexer.get_stats()
+            logger.info(f"Index ready: {stats['total_folders']} folders, {stats['total_files']} files")
+            
+            # Create application without running polling
+            self.application = Application.builder().token(self.token).build()
+            
+            # Add handlers
+            self.application.add_handler(CommandHandler("start", self.start_command))
+            self.application.add_handler(CommandHandler("menu", self.menu_command))
+            self.application.add_handler(CommandHandler("help", self.help_command))
+            self.application.add_handler(CommandHandler("about", self.about_command))
+            self.application.add_handler(CommandHandler("privacy", self.privacy_command))
+            self.application.add_handler(CommandHandler("feedback", self.feedback_command))
+            self.application.add_handler(CommandHandler("admin", self.admin_command))
+            self.application.add_handler(CallbackQueryHandler(self.button_callback))
+            self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_feedback_message))
+            
+            # Set startup time
+            from datetime import datetime, timezone
+            self.startup_time = datetime.now(timezone.utc)
+            
+            logger.info("Application setup complete")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error setting up application: {e}")
+            return False
         
     async def webhook_handler(self, request: Request) -> Response:
         """Handle incoming webhook requests from Telegram"""
         try:
+            # Check if application is ready
+            if not self.application:
+                logger.error("Application not initialized")
+                return Response(text="Application not ready", status=503)
+            
             # Log the request for debugging
             client_ip = request.remote
             logger.debug(f"Webhook request from {client_ip}")
@@ -150,6 +197,10 @@ class OneDriveBotRender(OneDriveBot):
     async def setup_webhook(self):
         """Set up webhook with Telegram"""
         try:
+            if not self.application:
+                logger.error("Application not initialized")
+                return False
+                
             if not self.webhook_url:
                 logger.error("Webhook URL not configured")
                 return False
@@ -170,10 +221,14 @@ class OneDriveBotRender(OneDriveBot):
         except Exception as e:
             logger.error(f"Error setting webhook: {e}")
             return False
-    
+
     async def remove_webhook(self):
         """Remove webhook"""
         try:
+            if not self.application:
+                logger.warning("Application not initialized, cannot remove webhook")
+                return True
+                
             await self.application.bot.delete_webhook(drop_pending_updates=True)
             logger.info("Webhook removed")
             return True
@@ -186,7 +241,12 @@ class OneDriveBotRender(OneDriveBot):
         try:
             logger.info("Starting OneDrive Telegram Bot on Render...")
             
-            # Initialize application
+            # Set up application first
+            if not self.setup_application():
+                logger.error("Failed to set up application")
+                return
+            
+            # Initialize and start application
             await self.application.initialize()
             await self.application.start()
             
@@ -230,10 +290,11 @@ class OneDriveBotRender(OneDriveBot):
         finally:
             # Cleanup
             try:
-                await self.remove_webhook()
-                await self.application.stop()
-                await self.application.shutdown()
-                if self.web_app:
+                if hasattr(self, 'application') and self.application:
+                    await self.remove_webhook()
+                    await self.application.stop()
+                    await self.application.shutdown()
+                if hasattr(self, 'web_app') and self.web_app:
                     await runner.cleanup()
             except Exception as e:
                 logger.error(f"Error during cleanup: {e}")

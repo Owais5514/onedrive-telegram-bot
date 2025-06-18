@@ -47,6 +47,30 @@ The OneDrive Telegram Bot has been successfully refactored into a modular archit
 - **Purpose**: Simple entry point for running the bot
 - **Features**: Clean separation of bot initialization from implementation
 
+### 5. Render Web Service (`app.py`)
+- **Purpose**: Render.com optimized web service deployment
+- **Responsibilities**:
+  - Webhook-based message handling (faster than polling)
+  - HTTP server with health check endpoints
+  - Render-specific configuration and environment handling
+  - Auto-scaling and deployment management
+
+- **Features**:
+  - Automatic HTTPS support (no SSL certificates needed)
+  - Built-in health monitoring at `/health` endpoint
+  - Environment variable configuration
+  - Zero-downtime deployments
+  - Direct GitHub integration for auto-deploy
+
+### 6. Deployment Configuration Files
+- **Purpose**: Support multiple deployment methods
+- **Files**:
+  - `render.yaml`: Render service configuration
+  - `Procfile`: Alternative process definition
+  - `runtime.txt`: Python version specification
+  - `.env.render`: Environment template for Render
+  - `start_local.py`: Local testing script
+
 ## Benefits of Modular Architecture
 
 ### 1. **Separation of Concerns**
@@ -69,6 +93,19 @@ The OneDrive Telegram Bot has been successfully refactored into a modular archit
 - Clear API for OneDrive operations
 - Standalone tools for manual operations
 
+### 5. **Render Deployment**
+- Web service deployment with automatic HTTPS
+- Webhook-based operation for better performance
+- Built-in health monitoring and auto-scaling
+- Direct GitHub integration for continuous deployment
+
+### 6. **Multiple Deployment Options**
+- Local development (polling mode)
+- GitHub Actions (scheduled/manual)
+- Render web service (production webhook)
+- Docker containerization
+- Self-hosted with various methods
+
 ## Usage Examples
 
 ### Running Components Independently
@@ -82,8 +119,14 @@ python indexer.py --search "pdf"    # Search for PDF files
 # Run comprehensive diagnostics
 python troubleshoot.py              # Test all components
 
-# Run the bot
-python main.py                      # Start Telegram bot
+# Run the bot (different methods)
+python main.py                      # Local polling mode
+python main_enhanced.py webhook     # Local webhook mode
+python app.py                       # Render web service mode
+python start_local.py               # Local test runner
+
+# Test Render deployment locally
+PORT=8080 python app.py             # Test with custom port
 ```
 
 ### Integration in Code
