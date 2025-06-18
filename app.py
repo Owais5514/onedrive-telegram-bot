@@ -126,10 +126,10 @@ class OneDriveBotRender(OneDriveBot):
             # Check if application is ready
             if not self.application:
                 logger.error("Application not initialized")
-                return Response(text="Application not ready", status=503)
+                return web.Response(text="Application not ready", status=503)
             
             # Log the request for debugging
-            client_ip = request.remote
+            client_ip = getattr(request, 'remote', 'unknown')
             logger.debug(f"Webhook request from {client_ip}")
             
             data = await request.json()
@@ -142,22 +142,24 @@ class OneDriveBotRender(OneDriveBot):
             else:
                 logger.warning("Received invalid update data")
                 
-            return Response(text="OK", status=200)
+            return web.Response(text="OK", status=200)
             
         except Exception as e:
             logger.error(f"Error processing webhook: {e}")
-            return Response(text="Error", status=500)
+            import traceback
+            traceback.print_exc()
+            return web.Response(text="Error", status=500)
     
     async def health_check(self, request: Request) -> Response:
         """Health check endpoint for Render"""
         try:
             # Check if bot is properly initialized
             if not self.application or not self.application.bot:
-                return Response(text="Bot not initialized", status=503)
+                return web.Response(text="Bot not initialized", status=503)
             
             # Check if indexer is working
             if not self.indexer:
-                return Response(text="Indexer not available", status=503)
+                return web.Response(text="Indexer not available", status=503)
             
             # Return health status
             health_data = {
@@ -167,7 +169,7 @@ class OneDriveBotRender(OneDriveBot):
                 "timestamp": self.startup_time.isoformat() if self.startup_time else None
             }
             
-            return Response(
+            return web.Response(
                 text=f"OneDrive Telegram Bot is running\n{health_data}",
                 status=200,
                 content_type='text/plain'
@@ -175,11 +177,11 @@ class OneDriveBotRender(OneDriveBot):
             
         except Exception as e:
             logger.error(f"Health check failed: {e}")
-            return Response(text=f"Health check failed: {str(e)}", status=503)
+            return web.Response(text=f"Health check failed: {str(e)}", status=503)
     
     async def root_handler(self, request: Request) -> Response:
         """Root endpoint handler"""
-        return Response(
+        return web.Response(
             text="OneDrive Telegram Bot is running! Visit /health for status.",
             status=200,
             content_type='text/plain'
