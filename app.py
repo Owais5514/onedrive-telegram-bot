@@ -15,7 +15,6 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Cont
 from bot import OneDriveBot
 from aiohttp import web
 from aiohttp.web_request import Request
-from aiohttp.web_response import Response
 
 # Load environment variables
 load_dotenv()
@@ -120,7 +119,7 @@ class OneDriveBotRender(OneDriveBot):
             traceback.print_exc()
             return False
         
-    async def webhook_handler(self, request: Request) -> Response:
+    async def webhook_handler(self, request: Request) -> web.Response:
         """Handle incoming webhook requests from Telegram"""
         try:
             # Check if application is ready
@@ -150,7 +149,7 @@ class OneDriveBotRender(OneDriveBot):
             traceback.print_exc()
             return web.Response(text="Error", status=500)
     
-    async def health_check(self, request: Request) -> Response:
+    async def health_check(self, request: Request) -> web.Response:
         """Health check endpoint for Render"""
         try:
             # Check if bot is properly initialized
@@ -179,7 +178,7 @@ class OneDriveBotRender(OneDriveBot):
             logger.error(f"Health check failed: {e}")
             return web.Response(text=f"Health check failed: {str(e)}", status=503)
     
-    async def root_handler(self, request: Request) -> Response:
+    async def root_handler(self, request: Request) -> web.Response:
         """Root endpoint handler"""
         return web.Response(
             text="OneDrive Telegram Bot is running! Visit /health for status.",
@@ -201,14 +200,15 @@ class OneDriveBotRender(OneDriveBot):
         app.router.add_get('/', self.root_handler)
         
         # Add CORS headers for web requests
-        async def add_cors_headers(request, handler):
+        @web.middleware
+        async def cors_handler(request, handler):
             response = await handler(request)
             response.headers['Access-Control-Allow-Origin'] = '*'
             response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
             response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
             return response
         
-        app.middlewares.append(add_cors_headers)
+        app.middlewares.append(cors_handler)
         
         return app
     
