@@ -94,6 +94,7 @@ class OneDriveBotRender(OneDriveBot):
             logger.info("Telegram application built successfully")
             
             # Add handlers
+            logger.info("Adding command handlers...")
             self.application.add_handler(CommandHandler("start", self.start_command))
             self.application.add_handler(CommandHandler("menu", self.menu_command))
             self.application.add_handler(CommandHandler("help", self.help_command))
@@ -103,6 +104,7 @@ class OneDriveBotRender(OneDriveBot):
             self.application.add_handler(CommandHandler("admin", self.admin_command))
             self.application.add_handler(CallbackQueryHandler(self.button_callback))
             self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_feedback_message))
+            logger.info("All handlers added successfully")
             
             # Set startup time
             from datetime import datetime, timezone
@@ -349,6 +351,13 @@ FOLDER_CONFIG = {
 def main():
     """Main function for Render deployment"""
     logger.info("🚀 Starting OneDrive Telegram Bot for Render deployment")
+    
+    # Log versions for debugging
+    try:
+        import telegram
+        logger.info(f"Using python-telegram-bot version: {telegram.__version__}")
+    except Exception as e:
+        logger.warning(f"Could not determine telegram library version: {e}")
     
     # Check required environment variables
     required_vars = [
