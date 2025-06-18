@@ -1,5 +1,38 @@
+# Core Telegram Bot Framework
 python-telegram-bot==20.7
+
+# Microsoft Authentication and Graph API
 msal==1.26.0
+
+# HTTP Requests
 requests==2.31.0
+
+# Environment Variables
 python-dotenv==1.0.0
+
+# Async File Operations (used for file handling)
 aiofiles==23.2.1
+
+# Additional dependencies that may be needed
+# asyncio - part of Python standard library (Python 3.7+)
+# json - part of Python standard library
+# logging - part of Python standard library
+# datetime - part of Python standard library
+# typing - part of Python standard library (Python 3.5+)
+# os - part of Python standard library
+# sys - part of Python standard library
+# io - part of Python standard library
+# traceback - part of Python standard library
+# argparse - part of Python standard library
+
+# Optional: For better SSL handling on some systems
+# certifi>=2023.7.22
+
+# Optional: For improved HTTP performance
+# urllib3>=2.0.0
+
+# Development/Testing dependencies (uncomment if needed)
+# pytest>=7.4.0
+# pytest-asyncio>=0.21.0
+# black>=23.0.0
+# flake8>=6.0.0
