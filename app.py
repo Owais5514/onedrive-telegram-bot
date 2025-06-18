@@ -79,8 +79,19 @@ class OneDriveBotRender(OneDriveBot):
             stats = self.indexer.get_stats()
             logger.info(f"Index ready: {stats['total_folders']} folders, {stats['total_files']} files")
             
-            # Create application without running polling
-            self.application = Application.builder().token(self.token).build()
+            # Create application builder with webhook-specific configuration
+            logger.info("Creating Telegram application builder...")
+            builder = Application.builder()
+            builder.token(self.token)
+            
+            # Configure for webhook mode (disable updater/polling completely)
+            logger.info("Configuring application for webhook mode...")
+            builder.updater(None)  # Disable the updater for webhook mode
+            
+            # Build the application
+            logger.info("Building Telegram application...")
+            self.application = builder.build()
+            logger.info("Telegram application built successfully")
             
             # Add handlers
             self.application.add_handler(CommandHandler("start", self.start_command))
