@@ -3,6 +3,7 @@ import json
 import logging
 import asyncio
 import requests
+import aiohttp
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 from dotenv import load_dotenv
@@ -106,8 +107,31 @@ class OneDriveBot:
         """Get folder contents from indexer"""
         return self.indexer.get_folder_contents(path)
 
+    async def download_file_async(self, file_id: str) -> Optional[bytes]:
+        """Download file from OneDrive asynchronously using aiohttp"""
+        token = self.indexer.get_access_token()
+        if not token:
+            return None
+            
+        try:
+            headers = {"Authorization": f"Bearer {token}"}
+            url = f"https://graph.microsoft.com/v1.0/users/{self.indexer.target_user_id}/drive/items/{file_id}/content"
+            
+            timeout = aiohttp.ClientTimeout(total=300)  # 5 minute timeout
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url, headers=headers) as response:
+                    if response.status == 200:
+                        return await response.read()
+                    else:
+                        logger.error(f"HTTP {response.status} error downloading file {file_id}")
+        except asyncio.TimeoutError:
+            logger.error(f"Timeout downloading file {file_id}")
+        except Exception as e:
+            logger.error(f"Error downloading file {file_id}: {e}")
+        return None
+
     def download_file(self, file_id: str) -> Optional[bytes]:
-        """Download file from OneDrive using indexer's token"""
+        """Download file from OneDrive using indexer's token (legacy sync method)"""
         token = self.indexer.get_access_token()
         if not token:
             return None
@@ -116,7 +140,7 @@ class OneDriveBot:
             import requests
             headers = {"Authorization": f"Bearer {token}"}
             url = f"https://graph.microsoft.com/v1.0/users/{self.indexer.target_user_id}/drive/items/{file_id}/content"
-            response = requests.get(url, headers=headers)
+            response = requests.get(url, headers=headers, timeout=300)
             
             if response.status_code == 200:
                 return response.content
@@ -574,10 +598,10 @@ class OneDriveBot:
                 return
             
             # Send downloading message for small files
-            await query.edit_message_text(f"⬇️ Downloading {file_name}...")
+            await query.edit_message_text(f"⬇️ Downloading {file_name}...\n📊 Size: {file_size_mb:.1f}MB")
             
-            # Download the file
-            file_content = self.download_file(file_id)
+            # Download the file asynchronously
+            file_content = await self.download_file_async(file_id)
             
             if file_content:
                 # Send the file

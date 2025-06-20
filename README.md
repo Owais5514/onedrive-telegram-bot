@@ -126,24 +126,25 @@ The bot searches for configured folders in the OneDrive root directory. By defau
 
 ### File Structure
 
-### GitHub Actions (Cloud Deployment) 🚀
+### GitHub Actions (OneDrive Indexer) 🚀
 
-This repository includes GitHub Actions workflows for automated cloud deployment:
+This repository includes a GitHub Actions workflow for building comprehensive OneDrive file indexes:
 
-**📋 Available Workflows:**
-- **🤖 Manual Bot Runner** - Run bot on-demand with configurable duration
-- **⏰ Scheduled Runner** - Automatic daily bot sessions  
-- **🧪 Test & Build** - Continuous integration and testing
+**📋 OneDrive Folder Indexer:**
+- **📁 Custom Folder Selection** - Index any folder from your OneDrive root
+- **📝 Append Mode** - Add new folders to existing indexes  
+- **📏 Depth Control** - Set maximum indexing depth
+- **💾 Persistent Storage** - Index files stored in dedicated branch
 
 **⚡ Quick Setup:**
 1. Fork this repository
 2. Add secrets in Settings → Secrets and variables → Actions:
-   - `TELEGRAM_BOT_TOKEN`
-   - `CLIENT_ID`, `CLIENT_SECRET`, `TENANT_ID`
-   - `USER_ID`, `ADMIN_USER_ID`
-3. Go to Actions tab → "Run OneDrive Telegram Bot" → "Run workflow"
+   - `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_TENANT_ID`
+   - `TARGET_USER_ID`
+3. Go to Actions tab → "OneDrive Folder Indexer" → "Run workflow"
+4. Enter folder name and indexing options
 
-**📖 Complete Guide:** See [GITHUB_ACTIONS.md](GITHUB_ACTIONS.md) for detailed setup instructions, security best practices, and troubleshooting.
+**📖 Complete Guide:** See [GITHUB_ACTIONS_INDEXER.md](GITHUB_ACTIONS_INDEXER.md) for detailed usage instructions, examples, and best practices.
 
 ### Render Deployment (Recommended) 🚀
 

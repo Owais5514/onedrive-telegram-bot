@@ -1,0 +1,206 @@
+name: OneDrive Folder Indexer
+
+on:
+  workflow_dispatch:
+    inputs:
+      folder_name:
+        description: 'OneDrive folder name to index'
+        required: true
+        type: string
+        default: 'Sharing'
+      append_mode:
+        description: 'Append to existing index (instead of replacing)'
+        required: false
+        type: boolean
+        default: true
+      max_depth:
+        description: 'Maximum folder depth to index (0 for unlimited)'
+        required: false
+        type: string
+        default: '0'
+
+jobs:
+  index-folder:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      actions: read
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Create .env file
+      run: |
+        cat > .env << EOF
+        # Azure App Registration
+        AZURE_CLIENT_ID=${{ secrets.AZURE_CLIENT_ID }}
+        AZURE_CLIENT_SECRET=${{ secrets.AZURE_CLIENT_SECRET }}
+        AZURE_TENANT_ID=${{ secrets.AZURE_TENANT_ID }}
+        
+        # Target OneDrive User
+        TARGET_USER_ID=${{ secrets.TARGET_USER_ID }}
+        
+        # GitHub Actions environment flag
+        GITHUB_ACTIONS=true
+        EOF
+
+    - name: Fetch existing index files
+      run: |
+        echo "📥 Checking for existing index files..."
+        
+        # Try to fetch index-data branch if it exists
+        if git ls-remote --heads origin index-data | grep -q index-data; then
+          echo "📥 Fetching existing index-data branch..."
+          git fetch origin index-data:index-data
+          
+          # Get existing index files from the branch
+          if git show index-data:file_index.json >/dev/null 2>&1; then
+            git show index-data:file_index.json > file_index.json
+            echo "✅ Retrieved existing index file"
+          fi
+          
+          if git show index-data:index_timestamp.txt >/dev/null 2>&1; then
+            git show index-data:index_timestamp.txt > index_timestamp.txt
+            echo "✅ Retrieved existing timestamp file"
+          fi
+        else
+          echo "ℹ️ No existing index-data branch found"
+        fi
+        
+        # Check if we have existing files
+        if [ -f "file_index.json" ]; then
+          INDEX_SIZE=$(stat -c%s file_index.json)
+          echo "📄 Existing index file size: $INDEX_SIZE bytes"
+        else
+          echo "📄 No existing index file found"
+        fi
+
+    - name: Run Folder Indexer
+      run: |
+        echo "🚀 Starting OneDrive folder indexer..."
+        echo "📁 Target folder: ${{ github.event.inputs.folder_name }}"
+        echo "📝 Append mode: ${{ github.event.inputs.append_mode }}"
+        echo "📏 Max depth: ${{ github.event.inputs.max_depth }}"
+        
+        # Set environment variables for the indexer
+        export TARGET_FOLDER_NAME="${{ github.event.inputs.folder_name }}"
+        export APPEND_MODE="${{ github.event.inputs.append_mode }}"
+        export MAX_DEPTH="${{ github.event.inputs.max_depth }}"
+        
+        # Run the enhanced indexer
+        python indexer.py --folder "${{ github.event.inputs.folder_name }}" \
+          ${{ github.event.inputs.append_mode == 'true' && '--append' || '--replace' }} \
+          --max-depth "${{ github.event.inputs.max_depth }}"
+
+    - name: Verify Index Results
+      run: |
+        echo "📊 Verifying indexing results..."
+        
+        if [ -f "file_index.json" ]; then
+          INDEX_SIZE=$(stat -c%s file_index.json)
+          echo "✅ Index file created/updated: $INDEX_SIZE bytes"
+          
+          # Show some statistics
+          python indexer.py --stats
+        else
+          echo "❌ No index file was created"
+          exit 1
+        fi
+        
+        if [ -f "index_timestamp.txt" ]; then
+          TIMESTAMP_CONTENT=$(cat index_timestamp.txt)
+          TIMESTAMP_DATE=$(python3 -c "import datetime; print(datetime.datetime.fromtimestamp(float('$TIMESTAMP_CONTENT')).strftime('%Y-%m-%d %H:%M:%S UTC'))")
+          echo "🕐 Index timestamp: $TIMESTAMP_DATE"
+        fi
+
+    - name: Commit Index Files to Branch
+      run: |
+        echo "📤 Committing index files to index-data branch..."
+        
+        # Configure Git
+        git config user.name "OneDrive Indexer Bot"
+        git config user.email "indexer@onedrive-telegram-bot.local"
+        git config commit.gpgsign false
+        
+        # Check if index-data branch exists locally
+        if git show-ref --verify --quiet refs/heads/index-data; then
+          echo "📋 Switching to existing index-data branch"
+          git checkout index-data
+        else
+          echo "🆕 Creating new index-data branch"
+          git checkout --orphan index-data
+          # Remove all files from the new branch initially
+          git rm -rf . 2>/dev/null || true
+        fi
+        
+        # Copy index files to the branch
+        cp file_index.json . 2>/dev/null || true
+        cp index_timestamp.txt . 2>/dev/null || true
+        
+        # Add the files
+        git add file_index.json index_timestamp.txt
+        
+        # Check if there are changes to commit
+        if git diff --cached --quiet; then
+          echo "ℹ️ No changes to commit (index unchanged)"
+        else
+          # Create commit message
+          TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
+          FOLDER_NAME="${{ github.event.inputs.folder_name }}"
+          APPEND_MODE="${{ github.event.inputs.append_mode }}"
+          
+          if [ "$APPEND_MODE" = "true" ]; then
+            COMMIT_MSG="Append index for folder '$FOLDER_NAME' - $TIMESTAMP"
+          else
+            COMMIT_MSG="Replace index for folder '$FOLDER_NAME' - $TIMESTAMP"
+          fi
+          
+          # Commit changes
+          git commit -m "$COMMIT_MSG"
+          echo "✅ Index files committed"
+          
+          # Push to remote
+          git push origin index-data
+          echo "✅ Index files pushed to remote"
+        fi
+
+    - name: Create Summary
+      run: |
+        echo "## 📋 Indexing Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Folder:** \`${{ github.event.inputs.folder_name }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "**Mode:** ${{ github.event.inputs.append_mode == 'true' && 'Append' || 'Replace' }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Max Depth:** ${{ github.event.inputs.max_depth == '0' && 'Unlimited' || github.event.inputs.max_depth }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [ -f "file_index.json" ]; then
+          INDEX_SIZE=$(stat -c%s file_index.json)
+          echo "**Index File Size:** $INDEX_SIZE bytes" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ **Status:** Indexing completed successfully" >> $GITHUB_STEP_SUMMARY
+        fi
+
+    - name: Upload index files as artifacts
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: index-files-${{ github.event.inputs.folder_name }}-${{ github.run_number }}
+        path: |
+          file_index.json
+          index_timestamp.txt
+        retention-days: 30

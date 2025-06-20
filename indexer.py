@@ -185,8 +185,13 @@ class OneDriveIndexer:
             logger.error(f"Error finding target folders: {e}")
             return []
 
-    def index_folder(self, folder_id: str, path: str, depth: int = 0) -> bool:
-        """Recursively index folder contents with depth tracking"""
+    def index_folder(self, folder_id: str, path: str, depth: int = 0, max_depth: int = 0) -> bool:
+        """Recursively index folder contents with depth tracking and optional depth limit"""
+        # Check depth limit
+        if max_depth > 0 and depth >= max_depth:
+            logger.info(f"{'  ' * depth}Reached max depth ({max_depth}) for: {path}")
+            return True
+            
         token = self.get_access_token()
         if not token:
             return False
@@ -231,12 +236,13 @@ class OneDriveIndexer:
             
             logger.info(f"{'  ' * depth}Found {len(folders_in_current)} folders and {len(files_in_current)} files in {path}")
             
-            # Recursively index subfolders
-            for folder_item in folders_in_current:
-                subfolder_path = f"{path}/{folder_item['name']}" if path != 'root' else folder_item['name']
-                success = self.index_folder(folder_item['id'], subfolder_path, depth + 1)
-                if not success:
-                    logger.warning(f"Failed to index subfolder: {subfolder_path}")
+            # Recursively index subfolders if within depth limit
+            if max_depth == 0 or depth < max_depth - 1:
+                for folder_item in folders_in_current:
+                    subfolder_path = f"{path}/{folder_item['name']}" if path != 'root' else folder_item['name']
+                    success = self.index_folder(folder_item['id'], subfolder_path, depth + 1, max_depth)
+                    if not success:
+                        logger.warning(f"Failed to index subfolder: {subfolder_path}")
             
             return True
             
@@ -244,8 +250,77 @@ class OneDriveIndexer:
             logger.error(f"Error indexing folder {path}: {e}")
             return False
 
+    def build_index_for_folder(self, folder_name: str, force_rebuild: bool = False, append_mode: bool = False, max_depth: int = 0) -> bool:
+        """Build index for a specific folder with append mode support"""
+        logger.info(f"Building index for folder: {folder_name}")
+        logger.info(f"Append mode: {append_mode}, Max depth: {max_depth if max_depth > 0 else 'unlimited'}")
+        
+        # If not appending, reset stats
+        if not append_mode:
+            self.total_folders = 0
+            self.total_files = 0
+            self.total_size = 0
+        
+        # Find the specific folder
+        token = self.get_access_token()
+        if not token:
+            return False
+            
+        try:
+            headers = {"Authorization": f"Bearer {token}"}
+            url = f"https://graph.microsoft.com/v1.0/users/{self.target_user_id}/drive/root/children"
+            response = requests.get(url, headers=headers)
+            
+            if response.status_code != 200:
+                logger.error(f"Error fetching root items: {response.text}")
+                return False
+                
+            root_items = response.json().get('value', [])
+            
+            # Find the target folder
+            target_folder = None
+            for item in root_items:
+                if 'folder' in item and item.get('name', '').lower() == folder_name.lower():
+                    target_folder = item
+                    break
+            
+            if not target_folder:
+                logger.error(f"Folder '{folder_name}' not found in OneDrive root")
+                available_folders = [item.get('name', '') for item in root_items if 'folder' in item]
+                logger.info(f"Available folders: {available_folders}")
+                return False
+            
+            logger.info(f"Found target folder: {target_folder['name']}")
+            
+            # Initialize or load existing index
+            if not append_mode:
+                self.file_index = {'root': target_folder['id']}
+            else:
+                # Load existing index if it exists
+                if os.path.exists(self.index_file):
+                    self.load_cached_index()
+                else:
+                    self.file_index = {}
+            
+            # Start recursive indexing with folder name as root path
+            folder_path = target_folder['name']
+            success = self.index_folder(target_folder['id'], folder_path, 0, max_depth)
+            
+            if success:
+                self.save_index(append_mode=append_mode)
+                logger.info(f"✅ Index built successfully for folder '{folder_name}'!")
+                logger.info(f"📊 Total: {self.total_folders} folders, {self.total_files} files")
+                logger.info(f"💾 Total size: {self.total_size / (1024*1024*1024):.2f} GB")
+                return True
+            else:
+                logger.error("❌ Failed to build index")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error building index for folder '{folder_name}': {e}")
+            return False
     def build_index(self, force_rebuild: bool = False) -> bool:
-        """Build complete file index from OneDrive Sharing folder"""
+        """Build complete file index from OneDrive target folders (legacy method)"""
         # Check if we should use cached index
         if not force_rebuild and os.path.exists(self.index_file) and os.path.exists(self.timestamp_file):
             try:
@@ -286,7 +361,7 @@ class OneDriveIndexer:
         logger.info(f"Using primary folder '{primary_folder['name']}' as root")
         
         # Start recursive indexing
-        success = self.index_folder(primary_folder['id'], 'root')
+        success = self.index_folder(primary_folder['id'], 'root', 0, 0)  # 0 for unlimited depth
         
         if success:
             self.save_index()
@@ -337,9 +412,25 @@ class OneDriveIndexer:
         except Exception as e:
             logger.error(f"Error loading cached index: {e}")
 
-    def save_index(self):
+    def save_index(self, append_mode=False):
         """Save index and timestamp to files"""
         try:
+            if append_mode and os.path.exists(self.index_file):
+                # Load existing index and merge
+                logger.info("Loading existing index for append mode...")
+                try:
+                    with open(self.index_file, 'r') as f:
+                        existing_index = json.load(f)
+                    
+                    # Merge indexes - new data takes precedence
+                    merged_index = existing_index.copy()
+                    merged_index.update(self.file_index)
+                    self.file_index = merged_index
+                    logger.info(f"Merged with existing index (now {len(self.file_index)} total paths)")
+                except Exception as e:
+                    logger.warning(f"Failed to load existing index for append: {e}")
+                    logger.info("Creating new index instead")
+            
             # Save index
             with open(self.index_file, 'w') as f:
                 json.dump(self.file_index, f, indent=2)
@@ -415,6 +506,10 @@ def main():
     parser.add_argument('--force', '-f', action='store_true', help='Force rebuild index')
     parser.add_argument('--stats', '-s', action='store_true', help='Show index statistics')
     parser.add_argument('--search', type=str, help='Search for files')
+    parser.add_argument('--folder', type=str, help='Specific folder name to index')
+    parser.add_argument('--append', action='store_true', help='Append to existing index instead of replacing')
+    parser.add_argument('--replace', action='store_true', help='Replace existing index (default behavior)')
+    parser.add_argument('--max-depth', type=int, default=0, help='Maximum folder depth to index (0 for unlimited)')
     
     args = parser.parse_args()
     
@@ -442,12 +537,33 @@ def main():
         return
     
     # Build index
-    success = indexer.build_index(force_rebuild=args.force)
-    if success:
-        print("✅ Index built successfully!")
+    if args.folder:
+        # Use new folder-specific indexing
+        append_mode = args.append and not args.replace
+        success = indexer.build_index_for_folder(
+            folder_name=args.folder,
+            force_rebuild=args.force,
+            append_mode=append_mode,
+            max_depth=args.max_depth
+        )
+        
+        if success:
+            print(f"✅ Index built successfully for folder '{args.folder}'!")
+            if append_mode:
+                print("📝 Index was appended to existing data")
+            else:
+                print("🔄 Index was created/replaced")
+        else:
+            print(f"❌ Failed to build index for folder '{args.folder}'")
+            return 1
     else:
-        print("❌ Failed to build index")
-        return 1
+        # Use legacy target folders method
+        success = indexer.build_index(force_rebuild=args.force)
+        if success:
+            print("✅ Index built successfully!")
+        else:
+            print("❌ Failed to build index")
+            return 1
     
     return 0
 
