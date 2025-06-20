@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Document
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 from indexer import OneDriveIndexer
+from database import db_manager
 
 # Import Git integration for feedback persistence
 try:
@@ -57,49 +58,72 @@ class OneDriveBot:
         self.callback_map = {}
         self.callback_counter = 0
         
-        # File paths
-        self.users_file = 'unlimited_users.json'
-        self.feedback_file = 'feedback_log.txt'
-        
-        # Cache
+        # User and data management
         self.unlimited_users = set()
         
         # Feedback collection state
         self.awaiting_feedback = set()  # Track users who are providing feedback
+        self.awaiting_mass_message = set()  # Track admins providing mass message
         
-        # Git integration for feedback persistence
-        self.git_enabled = GIT_AVAILABLE and git_manager is not None
-        if self.git_enabled:
-            logger.info("Git integration enabled for feedback persistence")
+        # Database integration for data persistence
+        if db_manager.enabled:
+            logger.info("Database integration enabled for data persistence")
         else:
-            logger.info("Git integration not available for feedback")
+            logger.info("Database not available - using fallback file storage")
         
         # Track bot startup time for pending message handling
         self.startup_time = None
         
-        # Load data
+        # Initialize database and load data
+        self.init_database()
         self.load_data()
 
+    def init_database(self):
+        """Initialize database and migrate data if needed"""
+        if db_manager.enabled:
+            logger.info("Initializing database...")
+            if db_manager.create_tables():
+                logger.info("Database tables ready")
+                
+                # Migrate existing file data if it exists and database is empty
+                if db_manager.get_user_count() == 0:
+                    logger.info("Database is empty, attempting to migrate from files...")
+                    if db_manager.migrate_from_files('unlimited_users.json', 'feedback_log.txt'):
+                        logger.info("Successfully migrated data from files")
+                    else:
+                        logger.info("No file data to migrate or migration failed")
+            else:
+                logger.error("Failed to initialize database tables")
+        else:
+            logger.warning("Database not available - will use file fallback (data may be lost on restart)")
+
     def load_data(self):
-        """Load cached data from files"""
+        """Load data from database or fallback to files"""
         try:
-            # Load feedback from Git if available (GitHub Actions environment)
-            if self.git_enabled and git_manager.is_github_actions:
-                logger.info("GitHub Actions environment detected, checking for feedback from Git...")
-                if git_manager.load_feedback_from_branch([self.feedback_file]):
-                    logger.info("Feedback file loaded from Git branch")
-            
-            if os.path.exists(self.users_file):
-                with open(self.users_file, 'r') as f:
-                    self.unlimited_users = set(json.load(f))
+            if db_manager.enabled:
+                # Load users from database
+                self.unlimited_users = db_manager.get_all_users()
+                logger.info(f"Loaded {len(self.unlimited_users)} users from database")
+            else:
+                # Fallback to file loading
+                if os.path.exists('unlimited_users.json'):
+                    with open('unlimited_users.json', 'r') as f:
+                        self.unlimited_users = set(json.load(f))
+                    logger.info(f"Loaded {len(self.unlimited_users)} users from file (fallback)")
         except Exception as e:
             logger.error(f"Error loading data: {e}")
 
     def save_data(self):
-        """Save data to files"""
+        """Save data to database or fallback to files"""
         try:
-            with open(self.users_file, 'w') as f:
-                json.dump(list(self.unlimited_users), f)
+            if db_manager.enabled:
+                # Database automatically saves data, no need to explicitly save user list
+                logger.debug("Using database - no manual save needed")
+            else:
+                # Fallback to file saving
+                with open('unlimited_users.json', 'w') as f:
+                    json.dump(list(self.unlimited_users), f)
+                logger.info("Saved user data to file (fallback)")
         except Exception as e:
             logger.error(f"Error saving data: {e}")
 
@@ -207,6 +231,26 @@ class OneDriveBot:
     # Command handlers
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /start command"""
+        # Add user to tracking system
+        user_id = update.effective_user.id
+        user = update.effective_user
+        
+        if user_id not in self.unlimited_users:
+            self.unlimited_users.add(user_id)
+            
+            # Add to database if available
+            if db_manager.enabled:
+                db_manager.add_user(
+                    user_id=user_id,
+                    username=user.username,
+                    first_name=user.first_name,
+                    last_name=user.last_name
+                )
+            else:
+                self.save_data()  # Fallback to file
+                
+            logger.info(f"New user added: {user_id} (@{user.username})")
+        
         keyboard = [
             [InlineKeyboardButton("📁 Browse Files", callback_data="browse_root")]
         ]
@@ -804,7 +848,10 @@ class OneDriveBot:
             keyboard = [[InlineKeyboardButton("🔙 Back to Admin Panel", callback_data="show_admin")],
                        [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.edit_message_text(f"👥 Unlimited users: {user_count}", reply_markup=reply_markup)
+            await query.edit_message_text(f"👥 Total users: {user_count}", reply_markup=reply_markup)
+            
+        elif action == "mass_message":
+            await self.start_mass_message_collection(query)
             
         elif action == "stats":
             try:
@@ -983,7 +1030,8 @@ class OneDriveBot:
         keyboard = [
             [InlineKeyboardButton("🔄 Rebuild Index", callback_data="admin_rebuild")],
             [InlineKeyboardButton("👥 Manage Users", callback_data="admin_users")],
-            [InlineKeyboardButton("📊 Bot Stats", callback_data="admin_stats")],
+            [InlineKeyboardButton("� Send Mass Message", callback_data="admin_mass_message")],
+            [InlineKeyboardButton("�📊 Bot Stats", callback_data="admin_stats")],
             [InlineKeyboardButton("🛑 Shutdown Bot", callback_data="admin_shutdown")],
             [InlineKeyboardButton("🔙 Back to Menu", callback_data="main_menu")]
         ]
@@ -1030,10 +1078,106 @@ class OneDriveBot:
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(feedback_text, reply_markup=reply_markup)
 
+    async def start_mass_message_collection(self, query):
+        """Start mass message collection process"""
+        user_id = query.from_user.id
+        if user_id != self.admin_id:
+            await query.answer("❌ Access denied.", show_alert=True)
+            return
+            
+        self.awaiting_mass_message.add(user_id)
+        
+        mass_message_text = (
+            "📢 Send Mass Message\n\n"
+            f"This will send a message to all {len(self.unlimited_users)} bot users.\n\n"
+            "Please type the message you want to send to all users.\n\n"
+            "⚠️ Note: Your next message will be sent to all users."
+        )
+        
+        keyboard = [
+            [InlineKeyboardButton("❌ Cancel", callback_data="show_admin")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(mass_message_text, reply_markup=reply_markup)
+
+    async def send_mass_message(self, message_text: str, admin_id: int):
+        """Send mass message to all users"""
+        total_users = len(self.unlimited_users)
+        success_count = 0
+        failed_count = 0
+        
+        logger.info(f"Starting mass message send to {total_users} users")
+        
+        for user_id in self.unlimited_users.copy():  # Use copy to avoid modification during iteration
+            try:
+                await self.application.bot.send_message(
+                    chat_id=user_id, 
+                    text=f"📢 Message from Admin:\n\n{message_text}"
+                )
+                success_count += 1
+                logger.debug(f"Mass message sent successfully to user {user_id}")
+            except Exception as e:
+                failed_count += 1
+                logger.warning(f"Failed to send mass message to user {user_id}: {e}")
+                
+                # Remove user if they blocked the bot or account was deleted
+                if "bot was blocked" in str(e).lower() or "user is deactivated" in str(e).lower():
+                    logger.info(f"Removing inactive user {user_id} from user list")
+                    self.unlimited_users.discard(user_id)
+                    
+                    # Remove from database if available
+                    if db_manager.enabled:
+                        db_manager.remove_user(user_id)
+                    else:
+                        self.save_data()  # Fallback to file
+        
+        # Send summary to admin
+        summary_text = (
+            f"📊 Mass Message Results\n\n"
+            f"✅ Successfully sent: {success_count}\n"
+            f"❌ Failed to send: {failed_count}\n"
+            f"📨 Total users: {total_users}\n\n"
+            f"💬 Message sent:\n{message_text}"
+        )
+        
+        keyboard = [
+            [InlineKeyboardButton("🔙 Back to Admin Panel", callback_data="show_admin")],
+            [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        try:
+            await self.application.bot.send_message(
+                chat_id=admin_id,
+                text=summary_text,
+                reply_markup=reply_markup
+            )
+        except Exception as e:
+            logger.error(f"Failed to send mass message summary to admin: {e}")
+
     async def handle_feedback_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle feedback messages from users"""
+        """Handle feedback messages and mass messages from users"""
         user_id = update.effective_user.id
         
+        # Check if this is a mass message from admin
+        if user_id in self.awaiting_mass_message:
+            # Remove admin from waiting list
+            self.awaiting_mass_message.discard(user_id)
+            
+            # Get the message text
+            message_text = update.message.text
+            
+            # Send confirmation and start mass message sending
+            await update.message.reply_text(
+                f"📢 Sending mass message to {len(self.unlimited_users)} users...\n\n"
+                "Please wait for the completion summary."
+            )
+            
+            # Send mass message (this will run in background)
+            await self.send_mass_message(message_text, user_id)
+            return
+        
+        # Handle regular feedback
         if user_id not in self.awaiting_feedback:
             return  # Not waiting for feedback from this user
         
@@ -1045,19 +1189,27 @@ class OneDriveBot:
         user_info = update.effective_user
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
-        # Save feedback to file
+        # Save feedback to database or file
         try:
-            feedback_entry = (
-                f"[{timestamp}] User: {user_info.first_name} "
-                f"({user_info.username or 'No username'}) ID: {user_id}\n"
-                f"Feedback: {feedback_text}\n"
-                f"{'='*50}\n\n"
-            )
-            
-            with open(self.feedback_file, 'a', encoding='utf-8') as f:
-                f.write(feedback_entry)
+            if db_manager.enabled:
+                # Save to database
+                if db_manager.add_feedback(user_id, feedback_text):
+                    logger.info(f"Feedback saved to database from user {user_id}: {feedback_text[:100]}...")
+                else:
+                    logger.error("Failed to save feedback to database")
+            else:
+                # Fallback to file
+                feedback_entry = (
+                    f"[{timestamp}] User: {user_info.first_name} "
+                    f"({user_info.username or 'No username'}) ID: {user_id}\n"
+                    f"Feedback: {feedback_text}\n"
+                    f"{'='*50}\n\n"
+                )
                 
-            logger.info(f"Feedback received from user {user_id}: {feedback_text[:100]}...")
+                with open('feedback_log.txt', 'a', encoding='utf-8') as f:
+                    f.write(feedback_entry)
+                    
+                logger.info(f"Feedback saved to file from user {user_id}: {feedback_text[:100]}...")
             
             # Commit feedback to Git repository if in GitHub Actions
             if self.git_enabled and git_manager.is_github_actions:

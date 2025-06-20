@@ -17,6 +17,10 @@ aiofiles==23.2.1
 # Webhook support (for webhook method)
 aiohttp==3.9.1
 
+# Database
+psycopg2-binary>=2.9.0
+sqlalchemy>=2.0.0
+
 # Additional dependencies that may be needed
 # asyncio - part of Python standard library (Python 3.7+)
 # json - part of Python standard library

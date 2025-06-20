@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 from bot import OneDriveBot
+from database import db_manager
 from aiohttp import web
 from aiohttp.web_request import Request
 
