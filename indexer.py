@@ -300,11 +300,8 @@ class OneDriveIndexer:
 
     def initialize_index(self) -> bool:
         """Initialize index by loading cached version or building if necessary"""
-        # Try to load from Git index branch first (GitHub Actions environment)
-        if self.git_enabled and git_manager.is_github_actions:
-            logger.info("GitHub Actions environment detected, trying to load index from Git...")
-            if git_manager.load_index_from_branch([self.index_file, self.timestamp_file]):
-                logger.info("Index files loaded from Git index branch")
+        # Note: Git integration disabled for Render deployment
+        # Index is rebuilt fresh on each service startup
         
         # First try to load existing cached index
         if os.path.exists(self.index_file) and os.path.exists(self.timestamp_file):
@@ -353,13 +350,9 @@ class OneDriveIndexer:
                 
             logger.info(f"Index saved to {self.index_file}")
             
-            # Commit to Git if available and in GitHub Actions
-            if self.git_enabled and git_manager.is_github_actions:
-                logger.info("Committing index files to Git repository...")
-                if git_manager.commit_to_index_branch([self.index_file, self.timestamp_file]):
-                    logger.info("✅ Index files committed to Git repository")
-                else:
-                    logger.warning("⚠️ Failed to commit index files to Git repository")
+            # Note: Git integration disabled for Render deployment
+            # Index files are rebuilt on each service restart
+            logger.info("✅ Index files saved locally (will be rebuilt on service restart)")
             
         except Exception as e:
             logger.error(f"Error saving index: {e}")

@@ -750,8 +750,8 @@ class OneDriveBot:
         await query.edit_message_text("🔄 Refreshing file index, please wait...")
         
         if self.indexer.build_index(force_rebuild=True):
-            await query.edit_message_text("✅ File index refreshed successfully!")
-            await asyncio.sleep(2)
+            await query.edit_message_text("✅ File index refreshed successfully!\n\n📝 Note: Index will be rebuilt automatically on next service restart.")
+            await asyncio.sleep(3)
             await self.show_folder_contents(query, "root")
         else:
             await query.edit_message_text("❌ Error refreshing file index. Please try again later.")
@@ -768,7 +768,7 @@ class OneDriveBot:
                 keyboard = [[InlineKeyboardButton("🔙 Back to Admin Panel", callback_data="show_admin")],
                            [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
-                await query.edit_message_text("✅ File index rebuilt successfully!", reply_markup=reply_markup)
+                await query.edit_message_text("✅ File index rebuilt successfully!\n\n📝 Note: Changes are temporary and will reset on service restart.", reply_markup=reply_markup)
             else:
                 keyboard = [[InlineKeyboardButton("🔙 Back to Admin Panel", callback_data="show_admin")],
                            [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
