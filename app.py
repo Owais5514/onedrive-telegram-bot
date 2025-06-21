@@ -278,10 +278,15 @@ class OneDriveBotRender(OneDriveBot):
             try:
                 logger.info("Sending startup notification to admin...")
                 if self.admin_id:
-                    await self.application.bot.send_message(
+                    sent_message = await self.application.bot.send_message(
                         chat_id=self.admin_id,
                         text="🟢 Bot Started (Render Webhook Mode)"
                     )
+                    # Track admin message for deletion too
+                    self.cold_start_messages[f"admin_{self.admin_id}"] = {
+                        'message_id': sent_message.message_id,
+                        'chat_id': self.admin_id
+                    }
             except Exception as e:
                 logger.error(f"Error sending startup notification: {e}")
             
