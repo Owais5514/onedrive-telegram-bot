@@ -17,6 +17,8 @@
 
 ### Available Features
 - **[GitHub Actions Indexer](features/GITHUB_ACTIONS_INDEXER.md)** - Manual OneDrive folder indexing workflow
+- **[Cold Start Message System](features/COLD_START_MESSAGE_SYSTEM.md)** - Enhanced user experience during bot startup on Render
+- **[Cold Start Quick Reference](features/COLD_START_QUICK_REFERENCE.md)** - Quick overview of the cold start system
 
 ## 🔧 Development
 

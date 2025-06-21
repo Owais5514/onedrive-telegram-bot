@@ -9,6 +9,7 @@ import sys
 import logging
 import asyncio
 from typing import Dict, List, Optional, Any
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes, MessageHandler, filters
@@ -113,6 +114,13 @@ class OneDriveBotRender(OneDriveBot):
             self.is_cold_start = True  # Flag to detect first interaction after startup
             self.pending_updates = []  # Queue for updates received during cold start
             self.cold_start_messages = {}  # Track cold start messages to delete later
+            self.cold_start_stats = {  # Analytics for cold start events
+                'startup_time': self.startup_time,
+                'first_user_contact': None,
+                'total_users_contacted': 0,
+                'total_updates_queued': 0,
+                'startup_duration': None
+            }
             
             # Reset cold start flag after initialization period
             asyncio.create_task(self.reset_cold_start_flag())
@@ -278,14 +286,32 @@ class OneDriveBotRender(OneDriveBot):
             try:
                 logger.info("Sending startup notification to admin...")
                 if self.admin_id:
+                    # Include cold start statistics in admin message
+                    users_count = len(self.cold_start_messages) - 1  # Exclude admin message
+                    pending_count = len(self.pending_updates)
+                    startup_duration = self.cold_start_stats.get('startup_duration')
+                    duration_text = f"{startup_duration.total_seconds():.1f}s" if startup_duration else "calculating..."
+                    
+                    admin_message = (
+                        "🟢 **Bot Started (Render Webhook Mode)**\n\n"
+                        f"📊 **Cold Start Analytics:**\n"
+                        f"• Users contacted during startup: {users_count}\n"
+                        f"• Pending updates queued: {pending_count}\n"
+                        f"• Startup duration: {duration_text}\n"
+                        f"• Startup completed: {datetime.now(timezone.utc).strftime('%H:%M:%S UTC')}\n\n"
+                        "✅ Processing queued user requests now..."
+                    )
+                    
                     sent_message = await self.application.bot.send_message(
                         chat_id=self.admin_id,
-                        text="🟢 Bot Started (Render Webhook Mode)"
+                        text=admin_message,
+                        parse_mode='Markdown'
                     )
                     # Track admin message for deletion too
                     self.cold_start_messages[f"admin_{self.admin_id}"] = {
                         'message_id': sent_message.message_id,
-                        'chat_id': self.admin_id
+                        'chat_id': self.admin_id,
+                        'timestamp': asyncio.get_event_loop().time()
                     }
             except Exception as e:
                 logger.error(f"Error sending startup notification: {e}")
@@ -298,6 +324,11 @@ class OneDriveBotRender(OneDriveBot):
             
             # Mark cold start as complete
             self.is_cold_start = False
+            
+            # Calculate startup duration
+            if hasattr(self, 'cold_start_stats'):
+                self.cold_start_stats['startup_duration'] = datetime.now(timezone.utc) - self.startup_time
+            
             logger.info("Bot fully initialized - cold start complete")
             
             # Set up webhook
@@ -366,36 +397,155 @@ class OneDriveBotRender(OneDriveBot):
 
     async def reset_cold_start_flag(self):
         """Reset cold start flag after initialization period"""
-        await asyncio.sleep(300)  # Wait 5 minutes
+        # More intelligent timeout based on typical Render startup times
+        await asyncio.sleep(120)  # Wait 2 minutes (more realistic for Render)
         if self.is_cold_start:
             self.is_cold_start = False
-            logger.info("Cold start detection period ended")
+            logger.warning("Cold start detection period ended (timeout reached)")
+            
+            # Notify any remaining users that startup completed via timeout
+            await self.notify_remaining_cold_start_users("timeout")
 
     async def handle_cold_start_message(self, user_id: int):
         """Send a message to user who triggered a cold start"""
         try:
+            # Get user info if possible for personalized message
+            try:
+                user_info = await self.application.bot.get_chat(user_id)
+                user_name = user_info.first_name if user_info.first_name else "there"
+            except:
+                user_name = "there"
+            
             cold_start_message = (
-                "🔄 Bot is starting up...\n\n"
-                "The bot was sleeping due to inactivity and is now warming up. "
-                "Please wait a moment and try your request again.\n\n"
-                "⏱️ This usually takes 10-30 seconds."
+                f"👋 Hi {user_name}!\n\n"
+                "🔄 **OneDrive Bot is waking up...**\n\n"
+                "The bot was sleeping due to inactivity and is now starting up. "
+                "Your request has been received and will be processed automatically once ready.\n\n"
+                "⏱️ **Expected startup time:** 10-30 seconds\n"
+                "📁 **What this bot does:** Browse and download OneDrive files\n"
+                "🎯 **Your request:** Will be processed automatically - no need to resend!\n\n"
+                "🔔 This message will disappear once the bot is ready."
             )
             
             # Send the message and store message info for later deletion
             sent_message = await self.application.bot.send_message(
                 chat_id=user_id,
-                text=cold_start_message
+                text=cold_start_message,
+                parse_mode='Markdown'
             )
             
             # Store message info for deletion later
             self.cold_start_messages[user_id] = {
                 'message_id': sent_message.message_id,
-                'chat_id': user_id
+                'chat_id': user_id,
+                'timestamp': asyncio.get_event_loop().time()
             }
             
-            logger.info(f"Sent cold start message to user {user_id}")
+            logger.info(f"Sent enhanced cold start message to user {user_id} ({user_name})")
+            
+            # Schedule a progress update message after 15 seconds if still in cold start
+            asyncio.create_task(self.send_progress_update(user_id, 15))
+            
         except Exception as e:
             logger.error(f"Error sending cold start message to user {user_id}: {e}")
+
+    async def send_progress_update(self, user_id: int, delay_seconds: int):
+        """Send a progress update if cold start is taking longer than expected"""
+        await asyncio.sleep(delay_seconds)
+        
+        # Only send if still in cold start and user had a cold start message
+        if self.is_cold_start and user_id in self.cold_start_messages:
+            try:
+                progress_message = (
+                    "⏳ **Still starting up...**\n\n"
+                    "The bot is taking a bit longer than usual to start. "
+                    "This sometimes happens when:\n"
+                    "• Building the OneDrive file index\n"
+                    "• Establishing secure connections\n"
+                    "• Loading recent file updates\n\n"
+                    "🔄 Almost ready! Your request is still queued."
+                )
+                
+                # Edit the existing cold start message instead of sending a new one
+                await self.application.bot.edit_message_text(
+                    chat_id=user_id,
+                    message_id=self.cold_start_messages[user_id]['message_id'],
+                    text=progress_message,
+                    parse_mode='Markdown'
+                )
+                
+                logger.info(f"Sent progress update to user {user_id}")
+                
+            except Exception as e:
+                logger.debug(f"Could not send progress update to user {user_id}: {e}")
+
+    async def send_ready_notification(self, user_id: int):
+        """Send a brief 'ready' message before processing queued updates"""
+        try:
+            if user_id in self.cold_start_messages:
+                ready_message = (
+                    "✅ **Bot is now ready!**\n\n"
+                    "Processing your request now..."
+                )
+                
+                # Edit the cold start message one final time
+                await self.application.bot.edit_message_text(
+                    chat_id=user_id,
+                    message_id=self.cold_start_messages[user_id]['message_id'],
+                    text=ready_message,
+                    parse_mode='Markdown'
+                )
+                
+                # Schedule deletion of this message after 3 seconds
+                asyncio.create_task(self.delayed_message_cleanup(user_id, 3))
+                
+        except Exception as e:
+            logger.debug(f"Could not send ready notification to user {user_id}: {e}")
+
+    async def delayed_message_cleanup(self, user_id: int, delay_seconds: int):
+        """Delete the cold start message after a delay"""
+        await asyncio.sleep(delay_seconds)
+        try:
+            if user_id in self.cold_start_messages:
+                await self.application.bot.delete_message(
+                    chat_id=self.cold_start_messages[user_id]['chat_id'],
+                    message_id=self.cold_start_messages[user_id]['message_id']
+                )
+                logger.debug(f"Deleted cold start message for user {user_id}")
+        except Exception as e:
+            logger.debug(f"Could not delete cold start message for user {user_id}: {e}")
+        
+        # Remove from tracking
+        self.cold_start_messages.pop(user_id, None)
+
+    async def notify_remaining_cold_start_users(self, reason: str):
+        """Notify users who are still waiting about startup completion"""
+        for user_id in list(self.cold_start_messages.keys()):
+            try:
+                if reason == "timeout":
+                    message = (
+                        "⚠️ **Startup Complete (Extended)**\n\n"
+                        "The bot took longer than expected to start but is now ready. "
+                        "Your request will be processed now."
+                    )
+                else:
+                    message = (
+                        "✅ **Bot Ready!**\n\n"
+                        "Processing your request..."
+                    )
+                
+                await self.application.bot.edit_message_text(
+                    chat_id=user_id,
+                    message_id=self.cold_start_messages[user_id]['message_id'],
+                    text=message,
+                    parse_mode='Markdown'
+                )
+                
+                # Schedule cleanup
+                asyncio.create_task(self.delayed_message_cleanup(user_id, 2))
+                
+            except Exception as e:
+                logger.debug(f"Could not notify user {user_id} about startup completion: {e}")
 
     async def process_webhook_update(self, update_data: dict):
         """Process webhook update with cold start detection"""
@@ -411,13 +561,19 @@ class OneDriveBotRender(OneDriveBot):
                     user_id = update_data['callback_query']['from']['id']
                 
                 if user_id:
+                    # Update analytics
+                    if self.cold_start_stats['first_user_contact'] is None:
+                        self.cold_start_stats['first_user_contact'] = datetime.now(timezone.utc)
+                    
                     # Send cold start message immediately if not already sent to this user
                     if user_id not in self.cold_start_messages:
                         await self.handle_cold_start_message(user_id)
+                        self.cold_start_stats['total_users_contacted'] += 1
                     
                     # Queue the update for processing after startup
                     self.pending_updates.append(update_data)
-                    logger.info(f"Queued update from user {user_id} during cold start")
+                    self.cold_start_stats['total_updates_queued'] += 1
+                    logger.info(f"Queued update from user {user_id} during cold start (Total queued: {len(self.pending_updates)})")
                     return
             
             # Process the update normally if not in cold start
@@ -439,6 +595,23 @@ class OneDriveBotRender(OneDriveBot):
                 
             logger.info(f"Processing {len(self.pending_updates)} pending updates from cold start")
             
+            # Send ready notifications to users before processing their requests
+            notified_users = set()
+            for update_data in self.pending_updates:
+                user_id = None
+                if update_data.get('message'):
+                    user_id = update_data['message']['from']['id']
+                elif update_data.get('callback_query'):
+                    user_id = update_data['callback_query']['from']['id']
+                
+                if user_id and user_id not in notified_users:
+                    await self.send_ready_notification(user_id)
+                    notified_users.add(user_id)
+            
+            # Small delay to let users see the ready message
+            await asyncio.sleep(1)
+            
+            # Process the queued updates
             for update_data in self.pending_updates:
                 try:
                     update = Update.de_json(update_data, self.application.bot)
@@ -461,24 +634,16 @@ class OneDriveBotRender(OneDriveBot):
             if not self.cold_start_messages:
                 return
                 
-            logger.info(f"Deleting {len(self.cold_start_messages)} cold start messages")
+            logger.info(f"Scheduling cleanup for {len(self.cold_start_messages)} cold start messages")
             
-            for user_id, message_info in self.cold_start_messages.items():
-                try:
-                    await self.application.bot.delete_message(
-                        chat_id=message_info['chat_id'],
-                        message_id=message_info['message_id']
-                    )
-                    logger.debug(f"Deleted cold start message for user {user_id}")
-                except Exception as e:
-                    logger.warning(f"Could not delete cold start message for user {user_id}: {e}")
+            # Use the delayed cleanup for all remaining messages
+            for user_id in list(self.cold_start_messages.keys()):
+                asyncio.create_task(self.delayed_message_cleanup(user_id, 1))
             
-            # Clear the cold start messages tracking
-            self.cold_start_messages.clear()
-            logger.info("Finished cleaning up cold start messages")
+            logger.info("Scheduled cleanup for all cold start messages")
             
         except Exception as e:
-            logger.error(f"Error cleaning up cold start messages: {e}")
+            logger.error(f"Error scheduling cleanup of cold start messages: {e}")
     
 
 # =============================================================================
