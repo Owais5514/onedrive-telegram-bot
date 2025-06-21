@@ -184,7 +184,19 @@ docker build -t onedrive-bot .
 docker run -d --env-file .env onedrive-bot
 ```
 
-## Architecture
+## 📚 Documentation
+
+For detailed setup, deployment, and development information:
+
+**[📖 Complete Documentation →](docs/README.md)**
+
+### Quick Links
+- **[🚀 Render Deployment Guide](docs/deployment/RENDER_DEPLOYMENT.md)** - Primary deployment method
+- **[📋 Deployment Checklist](docs/deployment/DEPLOYMENT_CHECKLIST.md)** - Step-by-step verification
+- **[🗄️ Database Setup Guide](docs/deployment/DATABASE_MIGRATION_GUIDE.md)** - PostgreSQL persistent storage
+- **[⚡ GitHub Actions Indexer](docs/features/GITHUB_ACTIONS_INDEXER.md)** - Automated folder indexing
+
+## Configuration
 
 ### File Structure
 ```
