@@ -111,7 +111,9 @@ The bot searches for configured folders in the OneDrive root directory. By defau
 ### Admin Commands
 - `/admin` - Admin panel (admin only)
   - Rebuild file index
-  - Manage users
+  - Manage users (view/add manually)
+  - Send mass messages to all users
+  - View user feedback
   - View bot statistics
   - Shutdown bot
 
@@ -144,7 +146,7 @@ This repository includes a GitHub Actions workflow for building comprehensive On
 3. Go to Actions tab → "OneDrive Folder Indexer" → "Run workflow"
 4. Enter folder name and indexing options
 
-**📖 Complete Guide:** See [GITHUB_ACTIONS_INDEXER.md](GITHUB_ACTIONS_INDEXER.md) for detailed usage instructions, examples, and best practices.
+**📖 Complete Guide:** See [GitHub Actions Indexer Guide](docs/features/GITHUB_ACTIONS_INDEXER.md) for detailed usage instructions, examples, and best practices.
 
 ### Render Deployment (Recommended) 🚀
 
@@ -170,7 +172,7 @@ Deploy your bot as a web service on Render.com with webhook support:
 - Auto-scaling and monitoring
 - Direct deployment from GitHub
 
-**📖 Complete Guide:** See [RENDER_DEPLOYMENT.md](RENDER_DEPLOYMENT.md) for detailed setup instructions, configuration options, and troubleshooting.
+**📖 Complete Guide:** See [Render Deployment Guide](docs/deployment/RENDER_DEPLOYMENT.md) for detailed setup instructions, configuration options, and troubleshooting.
 
 **🔧 Files for Render:**
 - `app.py` - Render-optimized bot launcher

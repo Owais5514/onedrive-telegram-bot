@@ -886,6 +886,9 @@ class OneDriveBot:
         elif action == "mass_message":
             await self.start_mass_message_collection(query)
             
+        elif action == "feedback":
+            await self.show_admin_feedback(query)
+            
         elif action == "stats":
             try:
                 stats = self.indexer.get_stats()
@@ -1063,8 +1066,9 @@ class OneDriveBot:
         keyboard = [
             [InlineKeyboardButton("🔄 Rebuild Index", callback_data="admin_rebuild")],
             [InlineKeyboardButton("👥 Manage Users", callback_data="admin_users")],
-            [InlineKeyboardButton("� Send Mass Message", callback_data="admin_mass_message")],
-            [InlineKeyboardButton("�📊 Bot Stats", callback_data="admin_stats")],
+            [InlineKeyboardButton("📢 Send Mass Message", callback_data="admin_mass_message")],
+            [InlineKeyboardButton("📝 View Feedback", callback_data="admin_feedback")],
+            [InlineKeyboardButton("📊 Bot Stats", callback_data="admin_stats")],
             [InlineKeyboardButton("🛑 Shutdown Bot", callback_data="admin_shutdown")],
             [InlineKeyboardButton("🔙 Back to Menu", callback_data="main_menu")]
         ]
@@ -1404,6 +1408,7 @@ class OneDriveBot:
                     logger.info(f"Feedback saved to database from user {user_id}: {feedback_text[:100]}...")
                 else:
                     logger.error("Failed to save feedback to database")
+                    raise Exception("Database save failed")
             else:
                 # Fallback to file
                 feedback_entry = (
@@ -1417,14 +1422,6 @@ class OneDriveBot:
                     f.write(feedback_entry)
                     
                 logger.info(f"Feedback saved to file from user {user_id}: {feedback_text[:100]}...")
-            
-            # Commit feedback to Git repository if in GitHub Actions
-            if self.git_enabled and git_manager.is_github_actions:
-                logger.info("Committing feedback to Git repository...")
-                if await self._commit_feedback_to_git(user_info, feedback_text, timestamp):
-                    logger.info("✅ Feedback committed to Git repository")
-                else:
-                    logger.warning("⚠️ Failed to commit feedback to Git repository")
             
             # Send confirmation to user
             keyboard = [
@@ -1452,7 +1449,6 @@ class OneDriveBot:
                     await context.bot.send_message(chat_id=self.admin_id, text=admin_notification)
                 except Exception as e:
                     logger.error(f"Error notifying admin about feedback: {e}")
-                    
         except Exception as e:
             logger.error(f"Error saving feedback: {e}")
             
@@ -1468,40 +1464,70 @@ class OneDriveBot:
                 reply_markup=reply_markup
             )
 
-    async def _commit_feedback_to_git(self, user_info, feedback_text, timestamp):
-        """Commit feedback to Git repository in real-time"""
+    async def show_admin_feedback(self, query):
+        """Show recent feedback to admin"""
+        if query.from_user.id != self.admin_id:
+            await query.answer("❌ Access denied.", show_alert=True)
+            return
+            
         try:
-            if not self.git_enabled:
-                return False
+            feedback_text = "📝 Recent Feedback\n\n"
             
-            # Configure Git for feedback commits
-            if not git_manager.configure_git():
-                logger.error("Failed to configure Git for feedback commit")
-                return False
-            
-            # Create commit message with feedback summary
-            sanitized_feedback = feedback_text.replace('\n', ' ').replace('\r', ' ')[:100]
-            if len(feedback_text) > 100:
-                sanitized_feedback += "..."
-            
-            commit_message = (
-                f"Add user feedback - {timestamp}\n\n"
-                f"From: {user_info.first_name} ({user_info.username or 'No username'})\n"
-                f"User ID: {user_info.id}\n"
-                f"Feedback: {sanitized_feedback}"
-            )
-            
-            # Use Git integration to commit feedback files
-            if git_manager.commit_feedback_files([self.feedback_file], commit_message):
-                logger.info("Feedback successfully committed to Git")
-                return True
+            if db_manager.enabled:
+                # Get feedback from database
+                feedback_list = db_manager.get_recent_feedback(limit=10)
+                if feedback_list:
+                    for i, feedback in enumerate(feedback_list, 1):
+                        user_id = feedback.get('user_id', 'Unknown')
+                        message = feedback.get('message', 'No message')
+                        timestamp = feedback.get('timestamp', 'Unknown time')
+                        
+                        # Truncate long messages
+                        if len(message) > 100:
+                            message = message[:100] + "..."
+                        
+                        feedback_text += f"{i}. ID: {user_id}\n📅 {timestamp}\n💬 {message}\n\n"
+                else:
+                    feedback_text += "No feedback found in database."
             else:
-                logger.warning("Git commit failed for feedback")
-                return False
-                
+                # Fallback to reading from file
+                import os
+                if os.path.exists('feedback_log.txt'):
+                    with open('feedback_log.txt', 'r', encoding='utf-8') as f:
+                        content = f.read()
+                        if content.strip():
+                            # Get last 1000 characters to show recent feedback
+                            recent_content = content[-1000:] if len(content) > 1000 else content
+                            feedback_text += f"Recent entries:\n\n{recent_content}"
+                        else:
+                            feedback_text += "No feedback found in file."
+                else:
+                    feedback_text += "No feedback file found."
+            
+            # Limit message length for Telegram
+            if len(feedback_text) > 4000:
+                feedback_text = feedback_text[:4000] + "\n\n... (truncated)"
+            
+            keyboard = [
+                [InlineKeyboardButton("🔙 Back to Admin Panel", callback_data="show_admin")],
+                [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await query.edit_message_text(feedback_text, reply_markup=reply_markup)
+            
         except Exception as e:
-            logger.error(f"Error committing feedback to Git: {e}")
-            return False
+            logger.error(f"Error showing admin feedback: {e}")
+            keyboard = [
+                [InlineKeyboardButton("🔙 Back to Admin Panel", callback_data="show_admin")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(
+                "❌ Error loading feedback. Please try again later.",
+                reply_markup=reply_markup
+            )
+
+    # ...existing code...
 
     def run(self):
         """Run the bot"""
