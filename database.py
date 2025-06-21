@@ -159,6 +159,31 @@ class DatabaseManager:
                 session.close()
             return set()
 
+    def get_all_users_data(self) -> List[Dict]:
+        """Get all users with their full data"""
+        if not self.enabled:
+            return []
+        
+        try:
+            session = self.Session()
+            users = session.query(User).all()
+            users_data = []
+            for user in users:
+                users_data.append({
+                    'user_id': user.user_id,
+                    'username': user.username,
+                    'first_name': user.first_name,
+                    'last_name': user.last_name,
+                    'added_at': user.added_at
+                })
+            session.close()
+            return users_data
+        except Exception as e:
+            logger.error(f"Error fetching users data: {e}")
+            if 'session' in locals():
+                session.close()
+            return []
+
     def get_user_count(self) -> int:
         """Get total number of users"""
         if not self.enabled:

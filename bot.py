@@ -860,7 +860,7 @@ class OneDriveBot:
                 # Get user details from database if available
                 users_info = []
                 if db_manager.enabled:
-                    all_users = db_manager.get_all_users()
+                    all_users = db_manager.get_all_users_data()
                     for user_data in all_users:
                         users_info.append(f"• {user_data.get('first_name', 'Unknown')} (@{user_data.get('username', 'none')}) - ID: {user_data.get('user_id')}")
                 else:
@@ -1261,8 +1261,7 @@ class OneDriveBot:
                         user_id=user_id_to_add,
                         username=username,
                         first_name=first_name,
-                        last_name=user_info.last_name,
-                        is_admin=(user_id_to_add == self.admin_id)
+                        last_name=user_info.last_name
                     ):
                         logger.info(f"User {user_id_to_add} manually added to database by admin {admin_id}")
                     else:
@@ -1302,8 +1301,7 @@ class OneDriveBot:
                         user_id=user_id_to_add,
                         username=None,
                         first_name="Unknown",
-                        last_name=None,
-                        is_admin=(user_id_to_add == self.admin_id)
+                        last_name=None
                     ):
                         logger.info(f"User {user_id_to_add} manually added to database (minimal info) by admin {admin_id}")
                 else:
