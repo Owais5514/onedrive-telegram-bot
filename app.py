@@ -107,9 +107,15 @@ class OneDriveBotRender(OneDriveBot):
             self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_feedback_message))
             logger.info("All handlers added successfully")
             
-            # Set startup time
+            # Set startup time and cold start detection
             from datetime import datetime, timezone
             self.startup_time = datetime.now(timezone.utc)
+            self.is_cold_start = True  # Flag to detect first interaction after startup
+            self.pending_updates = []  # Queue for updates received during cold start
+            self.cold_start_messages = {}  # Track cold start messages to delete later
+            
+            # Reset cold start flag after initialization period
+            asyncio.create_task(self.reset_cold_start_flag())
             
             logger.info("Application setup complete")
             return True
@@ -127,20 +133,15 @@ class OneDriveBotRender(OneDriveBot):
             if not self.application:
                 logger.error("Application not initialized")
                 return web.Response(text="Application not ready", status=503)
-            
+
             # Log the request for debugging
             client_ip = getattr(request, 'remote', 'unknown')
             logger.debug(f"Webhook request from {client_ip}")
-            
+
             data = await request.json()
-            update = Update.de_json(data, self.application.bot)
             
-            if update:
-                # Process the update
-                await self.application.process_update(update)
-                logger.debug(f"Processed update: {update.update_id}")
-            else:
-                logger.warning("Received invalid update data")
+            # Process with cold start detection
+            await self.process_webhook_update(data)
                 
             return web.Response(text="OK", status=200)
             
@@ -273,12 +274,26 @@ class OneDriveBotRender(OneDriveBot):
             logger.info("Starting Telegram application...")
             await self.application.start()
             
-            # Send startup notification
+            # Send startup notification to admin only
             try:
-                logger.info("Sending startup notification...")
-                await self.notify_subscribers("🟢 Bot Started (Render Webhook Mode)")
+                logger.info("Sending startup notification to admin...")
+                if self.admin_id:
+                    await self.application.bot.send_message(
+                        chat_id=self.admin_id,
+                        text="🟢 Bot Started (Render Webhook Mode)"
+                    )
             except Exception as e:
                 logger.error(f"Error sending startup notification: {e}")
+            
+            # Process any pending updates from cold start
+            await self.process_pending_updates()
+            
+            # Delete cold start messages now that bot is fully active
+            await self.cleanup_cold_start_messages()
+            
+            # Mark cold start as complete
+            self.is_cold_start = False
+            logger.info("Bot fully initialized - cold start complete")
             
             # Set up webhook
             logger.info("Setting up webhook...")
@@ -302,6 +317,7 @@ class OneDriveBotRender(OneDriveBot):
             logger.info(f"✅ Webhook server started successfully!")
             logger.info(f"🌐 Webhook URL: {self.webhook_url}{self.webhook_path}")
             logger.info(f"💚 Health check: {self.webhook_url}/health")
+            logger.info("🚀 Bot is ready to receive requests!")
             
             # Keep the server running
             try:
@@ -343,6 +359,122 @@ class OneDriveBotRender(OneDriveBot):
             logger.error(f"Bot crashed: {e}")
             raise
 
+    async def reset_cold_start_flag(self):
+        """Reset cold start flag after initialization period"""
+        await asyncio.sleep(300)  # Wait 5 minutes
+        if self.is_cold_start:
+            self.is_cold_start = False
+            logger.info("Cold start detection period ended")
+
+    async def handle_cold_start_message(self, user_id: int):
+        """Send a message to user who triggered a cold start"""
+        try:
+            cold_start_message = (
+                "🔄 Bot is starting up...\n\n"
+                "The bot was sleeping due to inactivity and is now warming up. "
+                "Please wait a moment and try your request again.\n\n"
+                "⏱️ This usually takes 10-30 seconds."
+            )
+            
+            # Send the message and store message info for later deletion
+            sent_message = await self.application.bot.send_message(
+                chat_id=user_id,
+                text=cold_start_message
+            )
+            
+            # Store message info for deletion later
+            self.cold_start_messages[user_id] = {
+                'message_id': sent_message.message_id,
+                'chat_id': user_id
+            }
+            
+            logger.info(f"Sent cold start message to user {user_id}")
+        except Exception as e:
+            logger.error(f"Error sending cold start message to user {user_id}: {e}")
+
+    async def process_webhook_update(self, update_data: dict):
+        """Process webhook update with cold start detection"""
+        try:
+            # Check if this is a cold start and someone is trying to interact
+            if self.is_cold_start:
+                user_id = None
+                
+                # Extract user ID from different types of updates
+                if update_data.get('message'):
+                    user_id = update_data['message']['from']['id']
+                elif update_data.get('callback_query'):
+                    user_id = update_data['callback_query']['from']['id']
+                
+                if user_id:
+                    # Send cold start message immediately if not already sent to this user
+                    if user_id not in self.cold_start_messages:
+                        await self.handle_cold_start_message(user_id)
+                    
+                    # Queue the update for processing after startup
+                    self.pending_updates.append(update_data)
+                    logger.info(f"Queued update from user {user_id} during cold start")
+                    return
+            
+            # Process the update normally if not in cold start
+            update = Update.de_json(update_data, self.application.bot)
+            if update:
+                await self.application.process_update(update)
+                logger.debug(f"Processed update: {update.update_id}")
+            
+        except Exception as e:
+            logger.error(f"Error processing webhook update: {e}")
+            import traceback
+            traceback.print_exc()
+
+    async def process_pending_updates(self):
+        """Process all queued updates from cold start period"""
+        try:
+            if not self.pending_updates:
+                return
+                
+            logger.info(f"Processing {len(self.pending_updates)} pending updates from cold start")
+            
+            for update_data in self.pending_updates:
+                try:
+                    update = Update.de_json(update_data, self.application.bot)
+                    if update:
+                        await self.application.process_update(update)
+                        logger.debug(f"Processed pending update: {update.update_id}")
+                except Exception as e:
+                    logger.error(f"Error processing pending update: {e}")
+            
+            # Clear the pending updates
+            self.pending_updates.clear()
+            logger.info("Finished processing pending updates")
+            
+        except Exception as e:
+            logger.error(f"Error processing pending updates: {e}")
+
+    async def cleanup_cold_start_messages(self):
+        """Delete all cold start messages now that bot is active"""
+        try:
+            if not self.cold_start_messages:
+                return
+                
+            logger.info(f"Deleting {len(self.cold_start_messages)} cold start messages")
+            
+            for user_id, message_info in self.cold_start_messages.items():
+                try:
+                    await self.application.bot.delete_message(
+                        chat_id=message_info['chat_id'],
+                        message_id=message_info['message_id']
+                    )
+                    logger.debug(f"Deleted cold start message for user {user_id}")
+                except Exception as e:
+                    logger.warning(f"Could not delete cold start message for user {user_id}: {e}")
+            
+            # Clear the cold start messages tracking
+            self.cold_start_messages.clear()
+            logger.info("Finished cleaning up cold start messages")
+            
+        except Exception as e:
+            logger.error(f"Error cleaning up cold start messages: {e}")
+    
 
 # =============================================================================
 # CONFIGURATION SECTION - MODIFY THESE FOR YOUR SETUP
