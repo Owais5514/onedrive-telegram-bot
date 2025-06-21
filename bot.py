@@ -64,6 +64,7 @@ class OneDriveBot:
         # Feedback collection state
         self.awaiting_feedback = set()  # Track users who are providing feedback
         self.awaiting_mass_message = set()  # Track admins providing mass message
+        self.awaiting_add_user = set()  # Track admin adding users manually
         
         # Database integration for data persistence
         if db_manager.enabled:
@@ -126,6 +127,10 @@ class OneDriveBot:
                 logger.info("Saved user data to file (fallback)")
         except Exception as e:
             logger.error(f"Error saving data: {e}")
+
+    def save_unlimited_users(self):
+        """Save unlimited users to database or file - convenience method"""
+        self.save_data()
 
     def get_folder_contents(self, path: str = 'root') -> List[Dict]:
         """Get folder contents from indexer"""
@@ -844,11 +849,39 @@ class OneDriveBot:
                 await query.edit_message_text("❌ Error rebuilding file index.", reply_markup=reply_markup)
                 
         elif action == "users":
+            # Enhanced user management with view and add options
+            await self.show_user_management(query)
+            
+        elif action == "view_users":
             user_count = len(self.unlimited_users)
-            keyboard = [[InlineKeyboardButton("🔙 Back to Admin Panel", callback_data="show_admin")],
-                       [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+            if user_count == 0:
+                user_list_text = "👥 No users registered yet."
+            else:
+                # Get user details from database if available
+                users_info = []
+                if db_manager.enabled:
+                    all_users = db_manager.get_all_users()
+                    for user_data in all_users:
+                        users_info.append(f"• {user_data.get('first_name', 'Unknown')} (@{user_data.get('username', 'none')}) - ID: {user_data.get('user_id')}")
+                else:
+                    # Fallback to just showing user IDs
+                    for user_id in self.unlimited_users:
+                        users_info.append(f"• User ID: {user_id}")
+                
+                user_list_text = f"👥 Total users: {user_count}\n\n" + "\n".join(users_info[:20])
+                if len(users_info) > 20:
+                    user_list_text += f"\n\n... and {len(users_info) - 20} more users"
+            
+            keyboard = [
+                [InlineKeyboardButton("👥 User Management", callback_data="admin_users")],
+                [InlineKeyboardButton("🔙 Back to Admin Panel", callback_data="show_admin")],
+                [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]
+            ]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.edit_message_text(f"👥 Total users: {user_count}", reply_markup=reply_markup)
+            await query.edit_message_text(user_list_text, reply_markup=reply_markup)
+            
+        elif action == "add_user":
+            await self.start_add_user_collection(query)
             
         elif action == "mass_message":
             await self.start_mass_message_collection(query)
@@ -1155,6 +1188,137 @@ class OneDriveBot:
         except Exception as e:
             logger.error(f"Failed to send mass message summary to admin: {e}")
 
+    async def show_user_management(self, query):
+        """Show user management options"""
+        if query.from_user.id != self.admin_id:
+            await query.answer("❌ Access denied.", show_alert=True)
+            return
+            
+        user_count = len(self.unlimited_users)
+        management_text = (
+            f"👥 User Management\n\n"
+            f"Current registered users: {user_count}\n\n"
+            "Choose an action:"
+        )
+        
+        keyboard = [
+            [InlineKeyboardButton("👀 View All Users", callback_data="admin_view_users")],
+            [InlineKeyboardButton("➕ Add User Manually", callback_data="admin_add_user")],
+            [InlineKeyboardButton("🔙 Back to Admin Panel", callback_data="show_admin")],
+            [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(management_text, reply_markup=reply_markup)
+
+    async def start_add_user_collection(self, query):
+        """Start the process of manually adding a user"""
+        if query.from_user.id != self.admin_id:
+            await query.answer("❌ Access denied.", show_alert=True)
+            return
+            
+        user_id = query.from_user.id
+        self.awaiting_add_user.add(user_id)
+        
+        add_user_text = (
+            "➕ Add User Manually\n\n"
+            "Please send the Telegram User ID of the user you want to add.\n\n"
+            "💡 How to get User ID:\n"
+            "• Ask the user to send any message to this bot\n"
+            "• Use @userinfobot to get their ID\n"
+            "• Check the logs when they interact with the bot\n\n"
+            "Send the numeric User ID now:"
+        )
+        
+        keyboard = [
+            [InlineKeyboardButton("❌ Cancel", callback_data="admin_users")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(add_user_text, reply_markup=reply_markup)
+
+    async def add_user_manually(self, user_id_to_add: int, admin_id: int):
+        """Manually add a user to the bot"""
+        try:
+            # Check if user is already registered
+            if user_id_to_add in self.unlimited_users:
+                return f"❌ User {user_id_to_add} is already registered."
+            
+            # Add user to the set
+            self.unlimited_users.add(user_id_to_add)
+            
+            # Try to get user info from Telegram
+            try:
+                user_info = await self.application.bot.get_chat(user_id_to_add)
+                first_name = user_info.first_name or "Unknown"
+                username = user_info.username or None
+                
+                # Add to database if available
+                if db_manager.enabled:
+                    if db_manager.add_user(
+                        user_id=user_id_to_add,
+                        username=username,
+                        first_name=first_name,
+                        last_name=user_info.last_name,
+                        is_admin=(user_id_to_add == self.admin_id)
+                    ):
+                        logger.info(f"User {user_id_to_add} manually added to database by admin {admin_id}")
+                    else:
+                        logger.warning(f"Failed to add user {user_id_to_add} to database")
+                else:
+                    # Save to file as fallback
+                    self.save_unlimited_users()
+                
+                # Try to send welcome message to the new user
+                try:
+                    welcome_text = (
+                        f"🎉 Welcome to the OneDrive Bot!\n\n"
+                        f"You have been manually added by an administrator.\n"
+                        f"Use /start to begin exploring files."
+                    )
+                    await self.application.bot.send_message(
+                        chat_id=user_id_to_add, 
+                        text=welcome_text
+                    )
+                    welcome_sent = True
+                except Exception as e:
+                    logger.warning(f"Could not send welcome message to user {user_id_to_add}: {e}")
+                    welcome_sent = False
+                
+                success_msg = (
+                    f"✅ User successfully added!\n\n"
+                    f"👤 Name: {first_name}\n"
+                    f"🆔 User ID: {user_id_to_add}\n"
+                    f"👤 Username: @{username if username else 'none'}\n"
+                    f"📧 Welcome message: {'✅ Sent' if welcome_sent else '❌ Failed'}"
+                )
+                
+            except Exception as e:
+                # User info not accessible, but still add them
+                if db_manager.enabled:
+                    if db_manager.add_user(
+                        user_id=user_id_to_add,
+                        username=None,
+                        first_name="Unknown",
+                        last_name=None,
+                        is_admin=(user_id_to_add == self.admin_id)
+                    ):
+                        logger.info(f"User {user_id_to_add} manually added to database (minimal info) by admin {admin_id}")
+                else:
+                    # Save to file as fallback
+                    self.save_unlimited_users()
+                
+                success_msg = (
+                    f"✅ User added with ID: {user_id_to_add}\n\n"
+                    f"⚠️ Could not retrieve user details.\n"
+                    f"The user can still use the bot."
+                )
+            
+            logger.info(f"Admin {admin_id} manually added user {user_id_to_add}")
+            return success_msg
+            
+        except Exception as e:
+            logger.error(f"Error manually adding user {user_id_to_add}: {e}")
+            return f"❌ Error adding user: {str(e)}"
+
     async def handle_feedback_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle feedback messages and mass messages from users"""
         user_id = update.effective_user.id
@@ -1175,6 +1339,49 @@ class OneDriveBot:
             
             # Send mass message (this will run in background)
             await self.send_mass_message(message_text, user_id)
+            return
+        
+        # Check if admin is adding a user manually
+        if user_id in self.awaiting_add_user:
+            # Remove admin from waiting list
+            self.awaiting_add_user.discard(user_id)
+            
+            # Get the user ID text
+            user_id_text = update.message.text.strip()
+            
+            # Validate that it's a numeric user ID
+            try:
+                user_id_to_add = int(user_id_text)
+                
+                # Add the user
+                result_message = await self.add_user_manually(user_id_to_add, user_id)
+                
+                # Send result with back button
+                keyboard = [
+                    [InlineKeyboardButton("👥 User Management", callback_data="admin_users")],
+                    [InlineKeyboardButton("🔙 Admin Panel", callback_data="show_admin")]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                await update.message.reply_text(
+                    result_message,
+                    reply_markup=reply_markup
+                )
+                
+            except ValueError:
+                # Invalid user ID format
+                keyboard = [
+                    [InlineKeyboardButton("🔄 Try Again", callback_data="admin_add_user")],
+                    [InlineKeyboardButton("👥 User Management", callback_data="admin_users")]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                await update.message.reply_text(
+                    f"❌ Invalid User ID format: '{user_id_text}'\n\n"
+                    "Please send a valid numeric Telegram User ID.\n"
+                    "Example: 123456789",
+                    reply_markup=reply_markup
+                )
             return
         
         # Handle regular feedback
