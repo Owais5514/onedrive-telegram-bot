@@ -15,6 +15,14 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 from dotenv import load_dotenv
 
+# Import database manager for persistent storage
+try:
+    from database import db_manager
+    DB_AVAILABLE = True
+except ImportError:
+    db_manager = None
+    DB_AVAILABLE = False
+
 # Import Git integration for index persistence
 try:
     from git_integration import git_manager
@@ -88,9 +96,13 @@ class OneDriveIndexer:
             logger.error(f"❌ Failed to initialize MSAL application: {e}")
             raise
         
-        # File paths
+        # File paths (fallback storage)
         self.index_file = 'file_index.json'
         self.timestamp_file = 'index_timestamp.txt'
+        
+        # Database keys for cache storage
+        self.db_index_key = 'file_index'
+        self.db_timestamp_key = 'index_timestamp'
         
         # Cache
         self.file_index = {}
@@ -101,6 +113,13 @@ class OneDriveIndexer:
         self.total_folders = 0
         self.total_files = 0
         self.total_size = 0
+        
+        # Database integration for index persistence
+        self.db_enabled = DB_AVAILABLE and db_manager and db_manager.enabled
+        if self.db_enabled:
+            logger.info("Database integration enabled for file index persistence")
+        else:
+            logger.info("Database not available for file index - using file storage")
         
         # Git integration for index persistence
         self.git_enabled = GIT_AVAILABLE and git_manager is not None
@@ -321,24 +340,45 @@ class OneDriveIndexer:
             return False
     def build_index(self, force_rebuild: bool = False) -> bool:
         """Build complete file index from OneDrive target folders (legacy method)"""
-        # Check if we should use cached index
-        if not force_rebuild and os.path.exists(self.index_file) and os.path.exists(self.timestamp_file):
-            try:
-                with open(self.timestamp_file, 'r') as f:
-                    last_update = float(f.read().strip())
-                time_since_update = datetime.now().timestamp() - last_update
-                
-                # If index is less than 1 week old, use cached version
-                if time_since_update < 604800:  # 1 week (7 days * 24 hours * 3600 seconds)
-                    days_ago = time_since_update / 86400  # Convert to days
-                    if days_ago < 1:
-                        logger.info(f"Using cached index (updated {time_since_update/3600:.1f} hours ago)")
-                    else:
-                        logger.info(f"Using cached index (updated {days_ago:.1f} days ago)")
-                    self.load_cached_index()
-                    return True
-            except Exception as e:
-                logger.warning(f"Error reading cached index: {e}")
+        # Check if we should use cached index (try database first, then files)
+        if not force_rebuild:
+            last_update = None
+            
+            # Try to get timestamp from database first
+            if self.db_enabled:
+                try:
+                    timestamp_data = db_manager.get_cache(self.db_timestamp_key)
+                    if timestamp_data and 'timestamp' in timestamp_data:
+                        last_update = timestamp_data['timestamp']
+                        logger.debug("Retrieved timestamp from database")
+                except Exception as e:
+                    logger.debug(f"Could not get timestamp from database: {e}")
+            
+            # Fallback to file timestamp
+            if last_update is None and os.path.exists(self.timestamp_file):
+                try:
+                    with open(self.timestamp_file, 'r') as f:
+                        last_update = float(f.read().strip())
+                        logger.debug("Retrieved timestamp from file")
+                except Exception as e:
+                    logger.debug(f"Could not get timestamp from file: {e}")
+            
+            # Check if we have a valid cached index
+            if last_update:
+                try:
+                    time_since_update = datetime.now().timestamp() - last_update
+                    
+                    # If index is less than 1 week old, use cached version
+                    if time_since_update < 604800:  # 1 week (7 days * 24 hours * 3600 seconds)
+                        days_ago = time_since_update / 86400  # Convert to days
+                        if days_ago < 1:
+                            logger.info(f"Using cached index (updated {time_since_update/3600:.1f} hours ago)")
+                        else:
+                            logger.info(f"Using cached index (updated {days_ago:.1f} days ago)")
+                        self.load_cached_index()
+                        return True
+                except Exception as e:
+                    logger.warning(f"Error checking cached index: {e}")
         
         logger.info("Building new file index...")
         
@@ -375,14 +415,32 @@ class OneDriveIndexer:
 
     def initialize_index(self) -> bool:
         """Initialize index by loading cached version or building if necessary"""
-        # Note: Git integration disabled for Render deployment
-        # Index is rebuilt fresh on each service startup
+        # Try database first, then file fallback, then rebuild
         
-        # First try to load existing cached index
-        if os.path.exists(self.index_file) and os.path.exists(self.timestamp_file):
+        last_update = None
+        
+        # Try to get timestamp from database first
+        if self.db_enabled:
+            try:
+                timestamp_data = db_manager.get_cache(self.db_timestamp_key)
+                if timestamp_data and 'timestamp' in timestamp_data:
+                    last_update = timestamp_data['timestamp']
+                    logger.debug("Found timestamp in database")
+            except Exception as e:
+                logger.debug(f"Could not get timestamp from database: {e}")
+        
+        # Fallback to file timestamp if database not available
+        if last_update is None and os.path.exists(self.timestamp_file):
             try:
                 with open(self.timestamp_file, 'r') as f:
                     last_update = float(f.read().strip())
+                    logger.debug("Found timestamp in file")
+            except Exception as e:
+                logger.debug(f"Could not get timestamp from file: {e}")
+        
+        # Check if we have a valid cached index
+        if last_update:
+            try:
                 time_since_update = datetime.now().timestamp() - last_update
                 
                 # If index is less than 1 week old, just load it
@@ -397,56 +455,105 @@ class OneDriveIndexer:
                 else:
                     logger.info(f"Cached index is {time_since_update/86400:.1f} days old, rebuilding...")
             except Exception as e:
-                logger.warning(f"Error reading cached index timestamp: {e}")
+                logger.warning(f"Error checking cached index timestamp: {e}")
         
         # If no valid cache, build new index
         return self.build_index()
 
     def load_cached_index(self):
-        """Load cached index from file"""
+        """Load cached index from database with file fallback"""
         try:
+            # Try database first
+            if self.db_enabled:
+                try:
+                    cached_index = db_manager.get_cache(self.db_index_key)
+                    if cached_index:
+                        self.file_index = cached_index
+                        logger.info(f"✅ Loaded cached index from database ({len(self.file_index)} paths)")
+                        return
+                    else:
+                        logger.info("No cached index found in database, trying file fallback")
+                except Exception as e:
+                    logger.warning(f"Failed to load index from database: {e}, trying file fallback")
+            
+            # Fallback to file
             if os.path.exists(self.index_file):
                 with open(self.index_file, 'r') as f:
                     self.file_index = json.load(f)
-                logger.info(f"Loaded cached index with {len(self.file_index)} paths")
+                logger.info(f"✅ Loaded cached index from file ({len(self.file_index)} paths)")
+            else:
+                logger.info("No cached index file found")
+                
         except Exception as e:
             logger.error(f"Error loading cached index: {e}")
+            self.file_index = {}
 
     def save_index(self, append_mode=False):
-        """Save index and timestamp to files"""
+        """Save index and timestamp to database with file fallback"""
+        timestamp = datetime.now().timestamp()
+        
         try:
-            if append_mode and os.path.exists(self.index_file):
-                # Load existing index and merge
-                logger.info("Loading existing index for append mode...")
+            # Handle append mode
+            if append_mode:
+                if self.db_enabled:
+                    # Load existing index from database and merge
+                    existing_index = db_manager.get_cache(self.db_index_key)
+                    if existing_index:
+                        logger.info("Loading existing index from database for append mode...")
+                        merged_index = existing_index.copy()
+                        merged_index.update(self.file_index)
+                        self.file_index = merged_index
+                        logger.info(f"Merged with existing index (now {len(self.file_index)} total paths)")
+                elif os.path.exists(self.index_file):
+                    # Fallback to file-based append
+                    logger.info("Loading existing index from file for append mode...")
+                    try:
+                        with open(self.index_file, 'r') as f:
+                            existing_index = json.load(f)
+                        
+                        merged_index = existing_index.copy()
+                        merged_index.update(self.file_index)
+                        self.file_index = merged_index
+                        logger.info(f"Merged with existing index (now {len(self.file_index)} total paths)")
+                    except Exception as e:
+                        logger.warning(f"Failed to load existing index for append: {e}")
+                        logger.info("Creating new index instead")
+            
+            # Try to save to database first
+            if self.db_enabled:
                 try:
-                    with open(self.index_file, 'r') as f:
-                        existing_index = json.load(f)
-                    
-                    # Merge indexes - new data takes precedence
-                    merged_index = existing_index.copy()
-                    merged_index.update(self.file_index)
-                    self.file_index = merged_index
-                    logger.info(f"Merged with existing index (now {len(self.file_index)} total paths)")
+                    # Save index to database
+                    if db_manager.save_cache(self.db_index_key, self.file_index):
+                        # Save timestamp to database
+                        db_manager.save_cache(self.db_timestamp_key, {'timestamp': timestamp})
+                        logger.info(f"✅ Index saved to database ({len(self.file_index)} paths)")
+                        
+                        # Also save to file as backup
+                        self._save_index_to_file(timestamp)
+                        return
+                    else:
+                        logger.warning("Failed to save index to database, falling back to file")
                 except Exception as e:
-                    logger.warning(f"Failed to load existing index for append: {e}")
-                    logger.info("Creating new index instead")
+                    logger.warning(f"Database save failed: {e}, falling back to file")
             
-            # Save index
-            with open(self.index_file, 'w') as f:
-                json.dump(self.file_index, f, indent=2)
-            
-            # Save timestamp
-            with open(self.timestamp_file, 'w') as f:
-                f.write(str(datetime.now().timestamp()))
-                
-            logger.info(f"Index saved to {self.index_file}")
-            
-            # Note: Git integration disabled for Render deployment
-            # Index files are rebuilt on each service restart
-            logger.info("✅ Index files saved locally (will be rebuilt on service restart)")
+            # Fallback to file storage
+            self._save_index_to_file(timestamp)
+            logger.info("✅ Index saved to file (database not available)")
             
         except Exception as e:
             logger.error(f"Error saving index: {e}")
+
+    def _save_index_to_file(self, timestamp):
+        """Helper method to save index to files"""
+        # Save index
+        with open(self.index_file, 'w') as f:
+            json.dump(self.file_index, f, indent=2)
+        
+        # Save timestamp
+        with open(self.timestamp_file, 'w') as f:
+            f.write(str(timestamp))
+            
+        logger.debug(f"Index and timestamp saved to files")
 
     def get_folder_contents(self, path: str = 'root') -> List[Dict]:
         """Get folder contents from cached index"""
@@ -463,10 +570,22 @@ class OneDriveIndexer:
         }
         
         try:
-            if os.path.exists(self.timestamp_file):
+            # Try to get timestamp from database first
+            if self.db_enabled:
+                try:
+                    timestamp_data = db_manager.get_cache(self.db_timestamp_key)
+                    if timestamp_data and 'timestamp' in timestamp_data:
+                        stats['last_updated'] = datetime.fromtimestamp(timestamp_data['timestamp'])
+                        logger.debug("Got timestamp from database for stats")
+                except Exception as e:
+                    logger.debug(f"Could not get timestamp from database for stats: {e}")
+            
+            # Fallback to file timestamp
+            if stats['last_updated'] is None and os.path.exists(self.timestamp_file):
                 with open(self.timestamp_file, 'r') as f:
                     timestamp = float(f.read().strip())
                     stats['last_updated'] = datetime.fromtimestamp(timestamp)
+                    logger.debug("Got timestamp from file for stats")
             
             # Count files and folders from index
             for path, items in self.file_index.items():
