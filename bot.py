@@ -34,6 +34,17 @@ logger = logging.getLogger(__name__)
 # AI features removed - keeping bot lightweight and focused
 
 class OneDriveBot:
+    async def send_keepalive_ping(self):
+        """Send a keep-alive ping to maintain service activity during long operations (for Render)"""
+        try:
+            # If running under Render, update last_activity if present
+            if hasattr(self, 'last_activity'):
+                from datetime import datetime, timezone
+                self.last_activity = datetime.now(timezone.utc)
+            # Optionally, log or perform other keep-alive actions here
+        except Exception as e:
+            import logging
+            logging.warning(f"Error sending keep-alive ping: {e}")
     def __init__(self, onedrive_folders=None, folder_config=None):
         self.token = os.getenv('TELEGRAM_BOT_TOKEN')
         self.admin_id = int(os.getenv('ADMIN_USER_ID', '0'))
@@ -815,38 +826,213 @@ class OneDriveBot:
         return None
 
     async def refresh_index(self, query):
-        """Refresh file index (admin only)"""
+        """Refresh file index (admin only) with async progress updates"""
         if query.from_user.id != self.admin_id:
             await query.answer("❌ Access denied. Admin only.", show_alert=True)
             return
             
-        await query.edit_message_text("🔄 Refreshing file index, please wait...")
+        # Check if indexing is already in progress
+        if hasattr(self.indexer, 'is_indexing') and self.indexer.is_indexing:
+            await query.answer("⏳ Indexing already in progress. Please wait...", show_alert=True)
+            return
+            
+        initial_message = await query.edit_message_text("🔄 Starting file index refresh...\n\n📊 Progress: 0%\n📁 Initializing...")
         
-        if self.indexer.build_index(force_rebuild=True):
-            await query.edit_message_text("✅ File index refreshed successfully!\n\n📝 Note: Index will be rebuilt automatically on next service restart.")
-            await asyncio.sleep(3)
-            await self.show_folder_contents(query, "root")
-        else:
-            await query.edit_message_text("❌ Error refreshing file index. Please try again later.")
+        # Keep track of message for updates
+        chat_id = query.message.chat_id
+        message_id = initial_message.message_id
+        
+        # Progress callback to update the message
+        last_update_time = datetime.now()
+        
+        async def progress_callback(current, total, current_path):
+            nonlocal last_update_time
+            
+            # Throttle updates to avoid hitting rate limits (update every 2 seconds max)
+            now = datetime.now()
+            if (now - last_update_time).total_seconds() < 2:
+                return
+                
+            last_update_time = now
+            
+            try:
+                if total > 0:
+                    progress_pct = min(100, int((current / total) * 100))
+                else:
+                    progress_pct = 0
+                
+                # Create progress bar
+                filled = int(progress_pct / 10)
+                bar = "█" * filled + "░" * (10 - filled)
+                
+                # Truncate path if too long
+                display_path = current_path if len(current_path) <= 30 else f"...{current_path[-27:]}"
+                
+                progress_text = (
+                    f"🔄 Refreshing file index...\n\n"
+                    f"📊 Progress: {progress_pct}% {bar}\n"
+                    f"📁 Current: {display_path}\n"
+                    f"📈 Processed: {current}/{total} folders"
+                )
+                
+                # Also send keep-alive ping to prevent Render shutdown
+                if hasattr(self, 'send_keepalive_ping'):
+                    asyncio.create_task(self.send_keepalive_ping())
+                
+                await self.application.bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    text=progress_text
+                )
+            except Exception as e:
+                logger.warning(f"Error updating progress message: {e}")
+        
+        try:
+            # Start async indexing with progress updates
+            success = await self.indexer.build_index_async(force_rebuild=True, progress_callback=progress_callback)
+            
+            if success:
+                stats = self.indexer.get_stats()
+                final_text = (
+                    "✅ File index refreshed successfully!\n\n"
+                    f"� **Index Statistics:**\n"
+                    f"• Folders: {stats.get('total_folders', 0):,}\n"
+                    f"• Files: {stats.get('total_files', 0):,}\n"
+                    f"• Total size: {stats.get('total_size', 0) / (1024*1024*1024):.2f} GB\n\n"
+                    f"�📝 Note: Index will be rebuilt automatically on next service restart."
+                )
+                await self.application.bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    text=final_text
+                )
+                await asyncio.sleep(3)
+                await self.show_folder_contents(query, "root")
+            else:
+                await self.application.bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    text="❌ Error refreshing file index. Please try again later."
+                )
+        except Exception as e:
+            logger.error(f"Error during async index refresh: {e}")
+            try:
+                await self.application.bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    text=f"❌ Error refreshing file index: {str(e)}"
+                )
+            except:
+                pass
 
     async def handle_admin_action(self, query, action: str):
-        """Handle admin actions"""
+        """Handle admin actions with async indexing support"""
         if query.from_user.id != self.admin_id:
             await query.answer("❌ Access denied.", show_alert=True)
             return
         
         if action == "rebuild":
-            await query.edit_message_text("🔄 Rebuilding file index...")
-            if self.indexer.build_index(force_rebuild=True):
+            # Check if indexing is already in progress
+            if hasattr(self.indexer, 'is_indexing') and self.indexer.is_indexing:
+                await query.answer("⏳ Indexing already in progress. Please wait...", show_alert=True)
+                return
+                
+            initial_message = await query.edit_message_text("🔄 Starting index rebuild...\n\n📊 Progress: 0%\n📁 Initializing...")
+            
+            # Keep track of message for updates
+            chat_id = query.message.chat_id
+            message_id = initial_message.message_id
+            
+            # Progress callback to update the message
+            last_update_time = datetime.now()
+            
+            async def progress_callback(current, total, current_path):
+                nonlocal last_update_time
+                
+                # Throttle updates to avoid hitting rate limits
+                now = datetime.now()
+                if (now - last_update_time).total_seconds() < 2:
+                    return
+                    
+                last_update_time = now
+                
+                try:
+                    if total > 0:
+                        progress_pct = min(100, int((current / total) * 100))
+                    else:
+                        progress_pct = 0
+                    
+                    # Create progress bar
+                    filled = int(progress_pct / 10)
+                    bar = "█" * filled + "░" * (10 - filled)
+                    
+                    # Truncate path if too long
+                    display_path = current_path if len(current_path) <= 30 else f"...{current_path[-27:]}"
+                    
+                    progress_text = (
+                        f"🔄 Rebuilding file index...\n\n"
+                        f"📊 Progress: {progress_pct}% {bar}\n"
+                        f"📁 Current: {display_path}\n"
+                        f"📈 Processed: {current}/{total} folders"
+                    )
+                    
+                    # Send keep-alive ping to prevent Render shutdown
+                    if hasattr(self, 'send_keepalive_ping'):
+                        asyncio.create_task(self.send_keepalive_ping())
+                    
+                    await self.application.bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=message_id,
+                        text=progress_text
+                    )
+                except Exception as e:
+                    logger.warning(f"Error updating rebuild progress message: {e}")
+            
+            try:
+                # Start async indexing with progress updates
+                success = await self.indexer.build_index_async(force_rebuild=True, progress_callback=progress_callback)
+                
                 keyboard = [[InlineKeyboardButton("🔙 Back to Admin Panel", callback_data="show_admin")],
                            [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
-                await query.edit_message_text("✅ File index rebuilt successfully!\n\n📝 Note: Changes are temporary and will reset on service restart.", reply_markup=reply_markup)
-            else:
+                
+                if success:
+                    stats = self.indexer.get_stats()
+                    final_text = (
+                        "✅ File index rebuilt successfully!\n\n"
+                        f"📊 **Index Statistics:**\n"
+                        f"• Folders: {stats.get('total_folders', 0):,}\n"
+                        f"• Files: {stats.get('total_files', 0):,}\n"
+                        f"• Total size: {stats.get('total_size', 0) / (1024*1024*1024):.2f} GB\n\n"
+                        f"📝 Note: Changes are temporary and will reset on service restart."
+                    )
+                    await self.application.bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=message_id,
+                        text=final_text,
+                        reply_markup=reply_markup
+                    )
+                else:
+                    await self.application.bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=message_id,
+                        text="❌ Error rebuilding file index.",
+                        reply_markup=reply_markup
+                    )
+            except Exception as e:
+                logger.error(f"Error during async index rebuild: {e}")
                 keyboard = [[InlineKeyboardButton("🔙 Back to Admin Panel", callback_data="show_admin")],
                            [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
-                await query.edit_message_text("❌ Error rebuilding file index.", reply_markup=reply_markup)
+                try:
+                    await self.application.bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=message_id,
+                        text=f"❌ Error rebuilding file index: {str(e)}",
+                        reply_markup=reply_markup
+                    )
+                except:
+                    pass
                 
         elif action == "users":
             # Enhanced user management with view and add options

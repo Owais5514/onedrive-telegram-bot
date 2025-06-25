@@ -61,19 +61,37 @@ class OneDriveBotRender(OneDriveBot):
         self.web_app = None
         self.application = None  # Initialize to None, will be set up later
         
+        # Keep-alive mechanism for long-running operations
+        self.keepalive_enabled = True
+        self.last_activity = datetime.now(timezone.utc)
+        
         logger.info(f"Render Bot initialized - Port: {self.port}")
         logger.info(f"Webhook URL: {self.webhook_url}{self.webhook_path}")
     
-    def setup_application(self):
+    async def setup_application(self):
         """Set up the Telegram application (separate from parent's setup_bot method)"""
         if not self.token:
             logger.error("TELEGRAM_BOT_TOKEN not found")
             return False
             
         try:
-            # Initialize indexer first
-            logger.info("Building OneDrive file index...")
-            if not self.indexer.build_index():
+            # Initialize indexer first (use async version for better performance)
+            logger.info("Building OneDrive file index (async)...")
+            
+            # Use async indexing if available, otherwise fall back to sync
+            if hasattr(self.indexer, 'build_index_async'):
+                # Create a simple progress callback for startup
+                async def startup_progress_callback(current, total, current_path):
+                    if total > 0:
+                        progress_pct = int((current / total) * 100)
+                        logger.info(f"Index building progress: {progress_pct}% - {current_path}")
+                
+                success = await self.indexer.build_index_async(progress_callback=startup_progress_callback)
+            else:
+                # Fall back to synchronous indexing
+                success = self.indexer.build_index()
+                
+            if not success:
                 logger.error("Failed to build initial index")
                 return False
                 
@@ -125,6 +143,9 @@ class OneDriveBotRender(OneDriveBot):
             # Reset cold start flag after initialization period
             asyncio.create_task(self.reset_cold_start_flag())
             
+            # Start keep-alive task to prevent Render shutdown during long operations
+            self.start_keepalive_task()
+            
             logger.info("Application setup complete")
             return True
             
@@ -160,7 +181,7 @@ class OneDriveBotRender(OneDriveBot):
             return web.Response(text="Error", status=500)
     
     async def health_check(self, request: Request) -> web.Response:
-        """Health check endpoint for Render"""
+        """Health check endpoint for Render with activity tracking"""
         try:
             # Check if bot is properly initialized
             if not self.application or not self.application.bot:
@@ -170,13 +191,34 @@ class OneDriveBotRender(OneDriveBot):
             if not self.indexer:
                 return web.Response(text="Indexer not available", status=503)
             
+            # Calculate time since last activity
+            now = datetime.now(timezone.utc)
+            time_since_activity = (now - self.last_activity).total_seconds()
+            
+            # Check indexing status
+            indexing_status = "idle"
+            indexing_progress = 0
+            if hasattr(self.indexer, 'is_indexing') and self.indexer.is_indexing:
+                indexing_status = "active"
+                if hasattr(self.indexer, 'indexing_progress') and hasattr(self.indexer, 'indexing_total'):
+                    if self.indexer.indexing_total > 0:
+                        indexing_progress = int((self.indexer.indexing_progress / self.indexer.indexing_total) * 100)
+            
             # Return health status
             health_data = {
                 "status": "healthy",
                 "bot_username": getattr(self.application.bot, 'username', 'unknown'),
                 "webhook_url": f"{self.webhook_url}{self.webhook_path}",
-                "timestamp": self.startup_time.isoformat() if self.startup_time else None
+                "timestamp": self.startup_time.isoformat() if self.startup_time else None,
+                "uptime_seconds": (now - self.startup_time).total_seconds() if self.startup_time else 0,
+                "indexing_status": indexing_status,
+                "indexing_progress": indexing_progress,
+                "last_activity_seconds_ago": time_since_activity,
+                "current_path": getattr(self.indexer, 'indexing_current_path', '') if indexing_status == "active" else ""
             }
+            
+            # Update activity timestamp for this health check
+            self.last_activity = now
             
             return web.Response(
                 text=f"OneDrive Telegram Bot is running\n{health_data}",
@@ -271,7 +313,7 @@ class OneDriveBotRender(OneDriveBot):
             logger.info("Starting OneDrive Telegram Bot on Render...")
             
             # Set up application first
-            if not self.setup_application():
+            if not await self.setup_application():
                 logger.error("Failed to set up application")
                 return
             
@@ -644,6 +686,37 @@ class OneDriveBotRender(OneDriveBot):
             
         except Exception as e:
             logger.error(f"Error scheduling cleanup of cold start messages: {e}")
+    
+    async def send_keepalive_ping(self):
+        """Send a keep-alive ping to maintain service activity during long operations"""
+        try:
+            self.last_activity = datetime.now(timezone.utc)
+            # This just updates our internal activity tracker
+            # The health endpoint will show recent activity
+            logger.debug("Keep-alive ping sent")
+        except Exception as e:
+            logger.warning(f"Error sending keep-alive ping: {e}")
+
+    def start_keepalive_task(self):
+        """Start background task to send periodic keep-alive signals during indexing"""
+        async def keepalive_loop():
+            while self.keepalive_enabled:
+                try:
+                    # Check if indexing is in progress
+                    if hasattr(self.indexer, 'is_indexing') and self.indexer.is_indexing:
+                        await self.send_keepalive_ping()
+                        # Sleep for 30 seconds during active indexing
+                        await asyncio.sleep(30)
+                    else:
+                        # Sleep for 5 minutes when not indexing
+                        await asyncio.sleep(300)
+                except Exception as e:
+                    logger.warning(f"Error in keep-alive loop: {e}")
+                    await asyncio.sleep(60)  # Wait a minute before retrying
+        
+        # Start the keep-alive task
+        asyncio.create_task(keepalive_loop())
+        logger.info("Keep-alive task started")
     
 
 # =============================================================================

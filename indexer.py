@@ -11,8 +11,10 @@ import logging
 import msal
 import requests
 import argparse
+import asyncio
+import aiohttp
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Callable
 from dotenv import load_dotenv
 
 # Import database manager for persistent storage
@@ -114,6 +116,13 @@ class OneDriveIndexer:
         self.total_files = 0
         self.total_size = 0
         
+        # Progress tracking for async operations
+        self.is_indexing = False
+        self.indexing_progress = 0
+        self.indexing_total = 0
+        self.indexing_current_path = ""
+        self.progress_callback = None
+        
         # Database integration for index persistence
         self.db_enabled = DB_AVAILABLE and db_manager and db_manager.enabled
         if self.db_enabled:
@@ -145,6 +154,30 @@ class OneDriveIndexer:
                 logger.error(f"No access token in result: {result}")
         except Exception as e:
             logger.error(f"Error getting access token: {e}")
+        return None
+
+    async def get_access_token_async(self) -> Optional[str]:
+        """Get valid access token for Microsoft Graph API (async version)"""
+        if self.access_token and self.token_expires and datetime.now() < self.token_expires:
+            return self.access_token
+            
+        try:
+            # Run token acquisition in thread pool to avoid blocking
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None, 
+                lambda: self.app.acquire_token_for_client(scopes=["https://graph.microsoft.com/.default"])
+            )
+            
+            if "access_token" in result:
+                self.access_token = result["access_token"]
+                self.token_expires = datetime.now() + timedelta(seconds=result.get("expires_in", 3600) - 300)
+                logger.info("Access token acquired successfully (async)")
+                return self.access_token
+            else:
+                logger.error(f"No access token in result: {result}")
+        except Exception as e:
+            logger.error(f"Error getting access token (async): {e}")
         return None
 
     def find_target_folders(self) -> List[Dict]:
@@ -202,6 +235,67 @@ class OneDriveIndexer:
             
         except Exception as e:
             logger.error(f"Error finding target folders: {e}")
+            return []
+
+    async def find_target_folders_async(self) -> List[Dict]:
+        """Find the target folders in the user's OneDrive root based on configuration (async version)"""
+        token = await self.get_access_token_async()
+        if not token:
+            return []
+            
+        try:
+            headers = {"Authorization": f"Bearer {token}"}
+            url = f"https://graph.microsoft.com/v1.0/users/{self.target_user_id}/drive/root/children"
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        logger.error(f"Error fetching root items: {error_text}")
+                        return []
+                        
+                    data = await response.json()
+                    root_items = data.get('value', [])
+                    
+            logger.info(f"Found {len(root_items)} items in OneDrive root")
+            
+            found_folders = []
+            available_folders = []
+            
+            for item in root_items:
+                if 'folder' in item:
+                    folder_name = item.get('name', '')
+                    available_folders.append(folder_name)
+                    
+                    # Check if this folder matches any of our target folders
+                    for target_folder in self.target_folders:
+                        if self.folder_config.get("case_sensitive", False):
+                            name_match = folder_name == target_folder
+                        else:
+                            name_match = folder_name.lower() == target_folder.lower()
+                        
+                        if name_match:
+                            logger.info(f"Found target folder: {folder_name}")
+                            found_folders.append(item)
+                            break
+            
+            logger.info(f"Available folders: {available_folders}")
+            logger.info(f"Found {len(found_folders)} target folders: {[f['name'] for f in found_folders]}")
+            
+            # Check if we meet the requirements
+            if self.folder_config.get("require_all_folders", False):
+                if len(found_folders) < len(self.target_folders):
+                    missing = set(self.target_folders) - set(f['name'] for f in found_folders)
+                    logger.error(f"Not all required folders found. Missing: {missing}")
+                    return []
+            elif not found_folders:
+                logger.error(f"None of the target folders found: {self.target_folders}")
+                return []
+            
+            return found_folders
+            
+        except Exception as e:
+            logger.error(f"Error finding target folders (async): {e}")
             return []
 
     def index_folder(self, folder_id: str, path: str, depth: int = 0, max_depth: int = 0) -> bool:
@@ -269,75 +363,180 @@ class OneDriveIndexer:
             logger.error(f"Error indexing folder {path}: {e}")
             return False
 
-    def build_index_for_folder(self, folder_name: str, force_rebuild: bool = False, append_mode: bool = False, max_depth: int = 0) -> bool:
-        """Build index for a specific folder with append mode support"""
-        logger.info(f"Building index for folder: {folder_name}")
-        logger.info(f"Append mode: {append_mode}, Max depth: {max_depth if max_depth > 0 else 'unlimited'}")
-        
-        # If not appending, reset stats
-        if not append_mode:
-            self.total_folders = 0
-            self.total_files = 0
-            self.total_size = 0
-        
-        # Find the specific folder
-        token = self.get_access_token()
+    async def index_folder_async(self, folder_id: str, path: str, depth: int = 0, max_depth: int = 0, session: aiohttp.ClientSession = None) -> bool:
+        """Recursively index folder contents with depth tracking and optional depth limit (async version)"""
+        # Check depth limit
+        if max_depth > 0 and depth >= max_depth:
+            logger.info(f"{'  ' * depth}Reached max depth ({max_depth}) for: {path}")
+            return True
+            
+        token = await self.get_access_token_async()
         if not token:
             return False
             
         try:
             headers = {"Authorization": f"Bearer {token}"}
-            url = f"https://graph.microsoft.com/v1.0/users/{self.target_user_id}/drive/root/children"
-            response = requests.get(url, headers=headers)
+            url = f"https://graph.microsoft.com/v1.0/users/{self.target_user_id}/drive/items/{folder_id}/children"
             
-            if response.status_code != 200:
-                logger.error(f"Error fetching root items: {response.text}")
-                return False
+            # Update progress
+            self.indexing_current_path = path
+            if self.progress_callback:
+                try:
+                    await self.progress_callback(self.indexing_progress, self.indexing_total, path)
+                except Exception as e:
+                    logger.warning(f"Error in progress callback: {e}")
+            
+            logger.info(f"{'  ' * depth}Indexing: {path}")
+            
+            # Use existing session or create new one
+            close_session = False
+            if session is None:
+                session = aiohttp.ClientSession()
+                close_session = True
+            
+            try:
+                async with session.get(url, headers=headers) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        logger.error(f"Error fetching folder contents for {path}: {error_text}")
+                        return False
+                        
+                    data = await response.json()
+                    items = data.get('value', [])
+            finally:
+                if close_session:
+                    await session.close()
+            
+            self.file_index[path] = []
+            
+            folders_in_current = []
+            files_in_current = []
+            
+            for item in items:
+                item_info = {
+                    'id': item['id'],
+                    'name': item['name'],
+                    'type': 'folder' if 'folder' in item else 'file',
+                    'size': item.get('size', 0),
+                    'modified': item.get('lastModifiedDateTime', ''),
+                    'path': f"{path}/{item['name']}" if path != 'root' else item['name']
+                }
                 
-            root_items = response.json().get('value', [])
-            
-            # Find the target folder
-            target_folder = None
-            for item in root_items:
-                if 'folder' in item and item.get('name', '').lower() == folder_name.lower():
-                    target_folder = item
-                    break
-            
-            if not target_folder:
-                logger.error(f"Folder '{folder_name}' not found in OneDrive root")
-                available_folders = [item.get('name', '') for item in root_items if 'folder' in item]
-                logger.info(f"Available folders: {available_folders}")
-                return False
-            
-            logger.info(f"Found target folder: {target_folder['name']}")
-            
-            # Initialize or load existing index
-            if not append_mode:
-                self.file_index = {'root': target_folder['id']}
-            else:
-                # Load existing index if it exists
-                if os.path.exists(self.index_file):
-                    self.load_cached_index()
+                if 'file' in item:
+                    item_info['download_url'] = item.get('@microsoft.graph.downloadUrl', '')
+                    files_in_current.append(item)
+                    self.total_files += 1
+                    self.total_size += item.get('size', 0)
                 else:
-                    self.file_index = {}
-            
-            # Start recursive indexing with folder name as root path
-            folder_path = target_folder['name']
-            success = self.index_folder(target_folder['id'], folder_path, 0, max_depth)
-            
-            if success:
-                self.save_index(append_mode=append_mode)
-                logger.info(f"✅ Index built successfully for folder '{folder_name}'!")
-                logger.info(f"📊 Total: {self.total_folders} folders, {self.total_files} files")
-                logger.info(f"💾 Total size: {self.total_size / (1024*1024*1024):.2f} GB")
-                return True
-            else:
-                logger.error("❌ Failed to build index")
-                return False
+                    folders_in_current.append(item)
+                    self.total_folders += 1
                 
+                self.file_index[path].append(item_info)
+            
+            logger.info(f"{'  ' * depth}Found {len(folders_in_current)} folders and {len(files_in_current)} files in {path}")
+            
+            # Update progress after processing current folder
+            self.indexing_progress += 1
+            
+            # Recursively index subfolders if within depth limit
+            if max_depth == 0 or depth < max_depth - 1:
+                if folders_in_current:
+                    # Use optimized batch processing for better performance
+                    success = await self.batch_index_folders_async(folders_in_current, path, depth, max_depth, session)
+                    if not success:
+                        logger.warning(f"Some subfolders in {path} failed to index")
+            
+            return True
+            
         except Exception as e:
-            logger.error(f"Error building index for folder '{folder_name}': {e}")
+            logger.error(f"Error indexing folder {path} (async): {e}")
             return False
+
+    async def batch_index_folders_async(self, folder_items: List[Dict], parent_path: str, depth: int = 0, max_depth: int = 0, session: aiohttp.ClientSession = None) -> bool:
+        """Process multiple folders concurrently with better rate limiting and error handling"""
+        if not folder_items:
+            return True
+            
+        # Limit concurrent requests to avoid Microsoft Graph API rate limits
+        semaphore = asyncio.Semaphore(5)  # Increased from 3 to 5 for better performance
+        
+        async def process_single_folder(folder_item):
+            async with semaphore:
+                subfolder_path = f"{parent_path}/{folder_item['name']}" if parent_path != 'root' else folder_item['name']
+                try:
+                    # Add exponential backoff for rate limiting
+                    max_retries = 3
+                    for attempt in range(max_retries):
+                        try:
+                            # Small delay to prevent overwhelming the API
+                            await asyncio.sleep(0.05 * (2 ** attempt))  # Exponential backoff
+                            success = await self.index_folder_async(folder_item['id'], subfolder_path, depth + 1, max_depth, session)
+                            return success
+                        except Exception as e:
+                            if attempt == max_retries - 1:
+                                logger.warning(f"Failed to index subfolder {subfolder_path} after {max_retries} attempts: {e}")
+                                return False
+                            else:
+                                logger.debug(f"Retry {attempt + 1} for folder {subfolder_path}: {e}")
+                                await asyncio.sleep(1 * (2 ** attempt))  # Wait before retry
+                except Exception as e:
+                    logger.warning(f"Failed to index subfolder {subfolder_path}: {e}")
+                    return False
+        
+        # Update total count for progress tracking
+        self.indexing_total += len(folder_items)
+        
+        # Process folders in batches to avoid memory issues with very large directories
+        batch_size = 10  # Process 10 folders at a time
+        
+        for i in range(0, len(folder_items), batch_size):
+            batch = folder_items[i:i + batch_size]
+            tasks = [process_single_folder(folder_item) for folder_item in batch]
+            
+            try:
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                
+                # Log any failures
+                for j, result in enumerate(results):
+                    if isinstance(result, Exception):
+                        logger.warning(f"Exception processing folder {batch[j]['name']}: {result}")
+                    elif not result:
+                        logger.warning(f"Failed to process folder: {batch[j]['name']}")
+                        
+                # Small delay between batches to be kind to the API
+                if i + batch_size < len(folder_items):
+                    await asyncio.sleep(0.1)
+                    
+            except Exception as e:
+                logger.error(f"Error processing folder batch: {e}")
+                return False
+        
+        return True
+
+    async def optimize_token_management(self):
+        """Proactively refresh tokens to avoid delays during indexing"""
+        try:
+            # Check if token will expire soon (within 5 minutes)
+            if self.token_expires and (self.token_expires - datetime.now()).total_seconds() < 300:
+                logger.info("Proactively refreshing access token...")
+                await self.get_access_token_async()
+        except Exception as e:
+            logger.warning(f"Error in proactive token refresh: {e}")
+
+    def set_progress_callback(self, callback: Callable):
+        """Set progress callback for external monitoring"""
+        self.progress_callback = callback
+
+    def get_indexing_status(self) -> Dict[str, Any]:
+        """Get current indexing status and progress"""
+        return {
+            'is_indexing': self.is_indexing,
+            'progress': self.indexing_progress,
+            'total': self.indexing_total,
+            'current_path': self.indexing_current_path,
+            'completion_percentage': int((self.indexing_progress / self.indexing_total) * 100) if self.indexing_total > 0 else 0
+        }
+
     def build_index(self, force_rebuild: bool = False) -> bool:
         """Build complete file index from OneDrive target folders (legacy method)"""
         # Check if we should use cached index (try database first, then files)
@@ -412,6 +611,101 @@ class OneDriveIndexer:
         else:
             logger.error("❌ Failed to build index")
             return False
+
+    async def build_index_async(self, force_rebuild: bool = False, progress_callback: Callable = None) -> bool:
+        """Build complete file index from OneDrive target folders (async version with progress tracking)"""
+        if self.is_indexing:
+            logger.warning("Indexing already in progress")
+            return False
+            
+        self.is_indexing = True
+        self.progress_callback = progress_callback
+        
+        try:
+            # Check if we should use cached index (try database first, then files)
+            if not force_rebuild:
+                last_update = None
+                
+                # Try to get timestamp from database first
+                if self.db_enabled:
+                    try:
+                        timestamp_data = db_manager.get_cache(self.db_timestamp_key)
+                        if timestamp_data and 'timestamp' in timestamp_data:
+                            last_update = timestamp_data['timestamp']
+                            logger.debug("Retrieved timestamp from database")
+                    except Exception as e:
+                        logger.debug(f"Could not get timestamp from database: {e}")
+                
+                # Fallback to file timestamp
+                if last_update is None and os.path.exists(self.timestamp_file):
+                    try:
+                        with open(self.timestamp_file, 'r') as f:
+                            last_update = float(f.read().strip())
+                            logger.debug("Retrieved timestamp from file")
+                    except Exception as e:
+                        logger.debug(f"Could not get timestamp from file: {e}")
+                
+                # Check if we have a valid cached index
+                if last_update:
+                    try:
+                        time_since_update = datetime.now().timestamp() - last_update
+                        
+                        # If index is less than 1 week old, use cached version
+                        if time_since_update < 604800:  # 1 week (7 days * 24 hours * 3600 seconds)
+                            days_ago = time_since_update / 86400  # Convert to days
+                            if days_ago < 1:
+                                logger.info(f"Using cached index (updated {time_since_update/3600:.1f} hours ago)")
+                            else:
+                                logger.info(f"Using cached index (updated {days_ago:.1f} days ago)")
+                            self.load_cached_index()
+                            return True
+                    except Exception as e:
+                        logger.warning(f"Error checking cached index: {e}")
+            
+            logger.info("Building new file index (async)...")
+            
+            # Optimize token management before starting
+            await self.optimize_token_management()
+            
+            # Reset stats
+            self.total_folders = 0
+            self.total_files = 0
+            self.total_size = 0
+            self.indexing_progress = 0
+            self.indexing_total = 1  # Start with 1 for the initial folder discovery
+            
+            # Find target folders
+            target_folders = await self.find_target_folders_async()
+            if not target_folders:
+                return False
+            
+            # Initialize index with target folders
+            primary_folder = target_folders[0]
+            self.file_index = {'root': primary_folder['id']}
+            
+            logger.info(f"Using primary folder '{primary_folder['name']}' as root")
+            
+            # Create a session for reuse
+            async with aiohttp.ClientSession() as session:
+                # Start recursive indexing
+                success = await self.index_folder_async(primary_folder['id'], 'root', 0, 0, session)
+            
+            if success:
+                self.save_index()
+                logger.info(f"✅ Index built successfully (async)!")
+                logger.info(f"📊 Total: {self.total_folders} folders, {self.total_files} files")
+                logger.info(f"💾 Total size: {self.total_size / (1024*1024*1024):.2f} GB")
+                return True
+            else:
+                logger.error("❌ Failed to build index (async)")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error in async build_index: {e}")
+            return False
+        finally:
+            self.is_indexing = False
+            self.progress_callback = None
 
     def initialize_index(self) -> bool:
         """Initialize index by loading cached version or building if necessary"""
