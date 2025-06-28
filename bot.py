@@ -12,6 +12,14 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Cont
 from indexer import OneDriveIndexer
 from database import db_manager
 
+# Import AUST Notice Checker
+try:
+    from aust_notices import AustNoticeChecker
+    AUST_NOTICES_AVAILABLE = True
+except ImportError:
+    AustNoticeChecker = None
+    AUST_NOTICES_AVAILABLE = False
+
 # Import Git integration for feedback persistence
 try:
     from git_integration import git_manager
@@ -635,13 +643,13 @@ class OneDriveBot:
         
         text = f"📁 Current folder: {folder_name}\n\n{status_text}"
         
-        await query.edit_message_text(text, reply_markup=reply_markup)
+        await self.safe_edit_message(query, text, reply_markup=reply_markup)
 
     async def handle_file_download(self, query, file_info: str):
         """Handle file download confirmation"""
         parts = file_info.split("_", 1)
         if len(parts) != 2:
-            await query.edit_message_text("❌ Error: Invalid file information.")
+            await self.safe_edit_message(query, "❌ Error: Invalid file information.")
             return
             
         file_id, file_name = parts
@@ -661,7 +669,7 @@ class OneDriveBot:
                     break
         
         if not file_details:
-            await query.edit_message_text("❌ Error: File not found in index.")
+            await self.safe_edit_message(query, "❌ Error: File not found in index.")
             return
         
         # Check file size (Telegram limit is 50MB)
@@ -681,7 +689,8 @@ class OneDriveBot:
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await query.edit_message_text(
+        await self.safe_edit_message(
+            query,
             f"📄 File: {file_name}\n"
             f"📊 Size: {file_size_mb:.1f}MB\n\n"
             f"⬇️ Do you want to download this file?",
@@ -694,7 +703,7 @@ class OneDriveBot:
             # Parse download info: file_id|folder_path
             parts = download_info.split('|', 1)
             if len(parts) != 2:
-                await query.edit_message_text("❌ Error: Invalid download information.")
+                await self.safe_edit_message(query, "❌ Error: Invalid download information.")
                 return
             
             file_id, current_folder_path = parts
@@ -714,7 +723,7 @@ class OneDriveBot:
                         break
             
             if not file_details:
-                await query.edit_message_text("❌ Error: File not found in index.")
+                await self.safe_edit_message(query, "❌ Error: File not found in index.")
                 return
             
             # Check file size (Telegram limit is 50MB)
@@ -1135,7 +1144,7 @@ class OneDriveBot:
                 [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.edit_message_text(user_list_text, reply_markup=reply_markup)
+            await self.safe_edit_message(query, user_list_text, reply_markup=reply_markup)
             
         elif action == "add_user":
             await self.start_add_user_collection(query)
@@ -1172,7 +1181,7 @@ class OneDriveBot:
             keyboard = [[InlineKeyboardButton("🔙 Back to Admin Panel", callback_data="show_admin")],
                        [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.edit_message_text(stats_text, reply_markup=reply_markup)
+            await self.safe_edit_message(query, stats_text, reply_markup=reply_markup)
             
         elif action == "shutdown":
             await query.edit_message_text("🛑 Shutting down bot...")
@@ -1216,7 +1225,7 @@ class OneDriveBot:
             
         welcome_text += "\nSelect an option below:"
         
-        await query.edit_message_text(welcome_text, reply_markup=reply_markup)
+        await self.safe_edit_message(query, welcome_text, reply_markup=reply_markup)
 
     async def menu_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /menu command - show bot menu"""
@@ -1270,7 +1279,7 @@ class OneDriveBot:
         
         keyboard = [[InlineKeyboardButton("🔙 Back to Menu", callback_data="main_menu")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(help_text, reply_markup=reply_markup)
+        await self.safe_edit_message(query, help_text, reply_markup=reply_markup)
 
     async def show_about_inline(self, query):
         """Show about as inline message"""
@@ -1290,7 +1299,7 @@ class OneDriveBot:
         
         keyboard = [[InlineKeyboardButton("🔙 Back to Menu", callback_data="main_menu")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(about_text, reply_markup=reply_markup)
+        await self.safe_edit_message(query, about_text, reply_markup=reply_markup)
 
     async def show_privacy_inline(self, query):
         """Show privacy as inline message"""
@@ -1312,7 +1321,41 @@ class OneDriveBot:
         
         keyboard = [[InlineKeyboardButton("🔙 Back to Menu", callback_data="main_menu")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(privacy_text, reply_markup=reply_markup)
+        await self.safe_edit_message(query, privacy_text, reply_markup=reply_markup)
+
+    async def safe_edit_message(self, query, text: str, reply_markup=None, parse_mode=None):
+        """Safely edit a message, avoiding 'Message is not modified' errors"""
+        try:
+            # Check if the message content would actually change
+            current_text = query.message.text or ""
+            current_markup = query.message.reply_markup
+            
+            # Compare text content
+            text_changed = current_text.strip() != text.strip()
+            
+            # Compare markup (simplified check)
+            markup_changed = True  # Always assume markup changed for safety
+            if current_markup is None and reply_markup is None:
+                markup_changed = False
+            
+            # Only edit if something actually changed
+            if text_changed or markup_changed:
+                await query.edit_message_text(
+                    text=text,
+                    reply_markup=reply_markup,
+                    parse_mode=parse_mode
+                )
+            else:
+                # Just answer the callback query to acknowledge the button press
+                await query.answer()
+                
+        except Exception as e:
+            if "Message is not modified" in str(e):
+                # Just acknowledge the callback query
+                await query.answer()
+            else:
+                # Re-raise other errors
+                raise e
 
     async def show_admin_inline(self, query):
         """Show admin panel as inline message"""
@@ -1331,7 +1374,8 @@ class OneDriveBot:
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await query.edit_message_text(
+        await self.safe_edit_message(
+            query,
             "🔧 Admin Panel\n\nSelect an option:",
             reply_markup=reply_markup
         )
@@ -1352,7 +1396,7 @@ class OneDriveBot:
             [InlineKeyboardButton("🔙 Back to Menu", callback_data="main_menu")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(feedback_text, reply_markup=reply_markup)
+        await self.safe_edit_message(query, feedback_text, reply_markup=reply_markup)
 
     async def start_feedback_collection(self, query):
         """Start feedback collection process"""
@@ -1769,7 +1813,7 @@ class OneDriveBot:
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            await query.edit_message_text(feedback_text, reply_markup=reply_markup)
+            await self.safe_edit_message(query, feedback_text, reply_markup=reply_markup)
             
         except Exception as e:
             logger.error(f"Error showing admin feedback: {e}")
