@@ -1,0 +1,56 @@
+name: Bot Uptime Monitor
+
+on:
+  schedule:
+    # Run every 10 minutes to keep the bot alive on Render free tier
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+    # Allow manual triggering
+    inputs:
+      custom_url:
+        description: 'Custom service URL to ping (optional)'
+        required: false
+        type: string
+
+jobs:
+  uptime-monitor:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests
+        
+    - name: Set service URL
+      run: |
+        if [ -n "${{ github.event.inputs.custom_url }}" ]; then
+          echo "SERVICE_URL=${{ github.event.inputs.custom_url }}" >> $GITHUB_ENV
+        elif [ -n "${{ secrets.WEBHOOK_URL }}" ]; then
+          echo "SERVICE_URL=${{ secrets.WEBHOOK_URL }}" >> $GITHUB_ENV
+        elif [ -n "${{ secrets.RENDER_EXTERNAL_URL }}" ]; then
+          echo "SERVICE_URL=${{ secrets.RENDER_EXTERNAL_URL }}" >> $GITHUB_ENV
+        else
+          echo "SERVICE_URL=https://onedrive-telegram-bot.onrender.com" >> $GITHUB_ENV
+        fi
+        
+    - name: Run uptime monitor
+      run: |
+        echo "🤖 Running uptime monitor for OneDrive Telegram Bot"
+        echo "Service URL: $SERVICE_URL"
+        python uptime_monitor.py
+      env:
+        WEBHOOK_URL: ${{ env.SERVICE_URL }}
+        
+    - name: Log monitoring result
+      run: |
+        echo "✅ Uptime monitoring completed at $(date -u)"
+        echo "This helps keep the Render free tier service alive by pinging it every 10 minutes."

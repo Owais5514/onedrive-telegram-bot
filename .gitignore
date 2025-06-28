@@ -68,6 +68,7 @@ Thumbs.db
 !user_queries.json
 !unlimited_users.json
 !index_timestamp.txt
+!uptime_monitor.py
 wheels/
 *.egg-info/
 .installed.cfg

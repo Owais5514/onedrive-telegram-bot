@@ -54,7 +54,8 @@ archived/                                  # Historical documentation
 ### **New Users / Deployment**
 1. [Main README](../README.md) - Start here
 2. [Render Deployment Guide](deployment/RENDER_DEPLOYMENT.md) - Deploy your bot
-3. [Database Migration Guide](deployment/DATABASE_MIGRATION_GUIDE.md) - Set up persistent storage
+3. [Keep-Alive System](deployment/KEEP_ALIVE_SYSTEM.md) - Prevent free tier sleep
+4. [Database Migration Guide](deployment/DATABASE_MIGRATION_GUIDE.md) - Set up persistent storage
 
 ### **Development / Customization**
 1. [Implementation Summary](development/IMPLEMENTATION_SUMMARY.md) - Understand the architecture

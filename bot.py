@@ -35,16 +35,87 @@ logger = logging.getLogger(__name__)
 
 class OneDriveBot:
     async def send_keepalive_ping(self):
-        """Send a keep-alive ping to maintain service activity during long operations (for Render)"""
+        """Enhanced keep-alive ping to maintain service activity during long operations"""
         try:
-            # If running under Render, update last_activity if present
+            # Update last_activity if present (for Render deployment)
             if hasattr(self, 'last_activity'):
                 from datetime import datetime, timezone
                 self.last_activity = datetime.now(timezone.utc)
-            # Optionally, log or perform other keep-alive actions here
+                logger.debug("Keep-alive: Updated last_activity timestamp")
+            
+            # If we have a webhook URL (Render deployment), self-ping the health endpoint
+            if hasattr(self, 'webhook_url') and self.webhook_url:
+                try:
+                    import aiohttp
+                    health_url = f"{self.webhook_url}/ping"
+                    
+                    timeout = aiohttp.ClientTimeout(total=5)
+                    async with aiohttp.ClientSession(timeout=timeout) as session:
+                        async with session.get(health_url) as response:
+                            if response.status == 200:
+                                logger.debug(f"Keep-alive: Self-ping successful to {health_url}")
+                            else:
+                                logger.warning(f"Keep-alive: Self-ping failed with status {response.status}")
+                except Exception as ping_error:
+                    logger.debug(f"Keep-alive: Self-ping error (normal during operations): {ping_error}")
+            
+            # Send periodic activity to admin during long operations (optional)
+            if hasattr(self, 'admin_id') and hasattr(self, 'application') and self.admin_id:
+                # Only send admin ping during indexing operations to avoid spam
+                if hasattr(self.indexer, 'is_indexing') and self.indexer.is_indexing:
+                    # Send a silent keep-alive message to admin every 5 minutes during indexing
+                    if not hasattr(self, '_last_admin_ping'):
+                        from datetime import datetime, timezone
+                        self._last_admin_ping = datetime.now(timezone.utc)
+                    
+                    from datetime import datetime, timezone, timedelta
+                    now = datetime.now(timezone.utc)
+                    if (now - self._last_admin_ping) > timedelta(minutes=5):
+                        try:
+                            progress = getattr(self.indexer, 'indexing_progress', 0)
+                            total = getattr(self.indexer, 'indexing_total', 0)
+                            current_path = getattr(self.indexer, 'indexing_current_path', '')
+                            
+                            if total > 0:
+                                progress_pct = int((progress / total) * 100)
+                                status_msg = f"🔄 Indexing: {progress_pct}% ({progress}/{total})\n📁 {current_path}"
+                                
+                                if hasattr(self, 'application') and self.application:
+                                    # Send silent message (no notification)
+                                    await self.application.bot.send_message(
+                                        chat_id=self.admin_id,
+                                        text=status_msg,
+                                        disable_notification=True
+                                    )
+                                    logger.debug("Keep-alive: Sent indexing status to admin")
+                        
+                        except Exception as admin_ping_error:
+                            logger.debug(f"Keep-alive: Admin ping error: {admin_ping_error}")
+                        
+                        self._last_admin_ping = now
+            
+            logger.debug("Keep-alive ping completed successfully")
+            
         except Exception as e:
-            import logging
-            logging.warning(f"Error sending keep-alive ping: {e}")
+            logger.warning(f"Error sending keep-alive ping: {e}")
+            
+    async def start_keepalive_during_operation(self, operation_name: str = "operation"):
+        """Start enhanced keep-alive during long-running operations"""
+        try:
+            logger.info(f"Starting keep-alive monitoring for {operation_name}")
+            
+            # Create a keep-alive task that runs during the operation
+            async def keepalive_task():
+                while True:
+                    await asyncio.sleep(30)  # Ping every 30 seconds during operations
+                    await self.send_keepalive_ping()
+            
+            # Return the task so it can be cancelled when operation completes
+            return asyncio.create_task(keepalive_task())
+            
+        except Exception as e:
+            logger.warning(f"Error starting keep-alive for {operation_name}: {e}")
+            return None
     def __init__(self, onedrive_folders=None, folder_config=None):
         self.token = os.getenv('TELEGRAM_BOT_TOKEN')
         self.admin_id = int(os.getenv('ADMIN_USER_ID', '0'))

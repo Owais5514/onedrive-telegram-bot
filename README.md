@@ -171,6 +171,7 @@ Deploy your bot as a web service on Render.com with webhook support:
 - Health check endpoint: `/health`
 - Auto-scaling and monitoring
 - Direct deployment from GitHub
+- **🔄 Keep-alive system** - Prevents free tier sleep
 
 **📖 Complete Guide:** See [Render Deployment Guide](docs/deployment/RENDER_DEPLOYMENT.md) for detailed setup instructions, configuration options, and troubleshooting.
 
@@ -178,6 +179,27 @@ Deploy your bot as a web service on Render.com with webhook support:
 - `app.py` - Render-optimized bot launcher
 - `render.yaml` - Service configuration
 - `.env.render` - Environment template
+
+### 🔄 Keep-Alive System (Free Tier)
+
+**Problem:** Render free tier sleeps after 15 minutes of inactivity.
+
+**Solution:** Comprehensive keep-alive system with multiple monitoring layers:
+
+**✅ Built-in Features:**
+- Self-ping every 10 minutes to maintain activity
+- Enhanced health monitoring endpoints (`/health`, `/ping`, `/metrics`)
+- Intelligent keep-alive during long operations
+- Cold start detection and user notifications
+
+**✅ External Monitoring:**
+- GitHub Actions workflow (pings every 10 minutes automatically)
+- Standalone uptime monitor script (`uptime_monitor.py`)
+- Compatible with external services (UptimeRobot, etc.)
+
+**⚡ Zero-cost solution using GitHub Actions free minutes!**
+
+**📖 Complete Guide:** See [Keep-Alive System Documentation](docs/deployment/KEEP_ALIVE_SYSTEM.md) for setup and configuration details.
 
 ### Docker Deployment (Optional)
 ```bash
@@ -194,7 +216,8 @@ For detailed setup, deployment, and development information:
 
 ### Quick Links
 - **[🚀 Render Deployment Guide](docs/deployment/RENDER_DEPLOYMENT.md)** - Primary deployment method
-- **[📋 Deployment Checklist](docs/deployment/DEPLOYMENT_CHECKLIST.md)** - Step-by-step verification
+- **[� Keep-Alive System](docs/deployment/KEEP_ALIVE_SYSTEM.md)** - Prevent free tier sleep
+- **[�📋 Deployment Checklist](docs/deployment/DEPLOYMENT_CHECKLIST.md)** - Step-by-step verification
 - **[🗄️ Database Setup Guide](docs/deployment/DATABASE_MIGRATION_GUIDE.md)** - PostgreSQL persistent storage
 - **[⚡ GitHub Actions Indexer](docs/features/GITHUB_ACTIONS_INDEXER.md)** - Automated folder indexing
 

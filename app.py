@@ -6,6 +6,7 @@ Optimized for Render.com deployment with webhook support
 
 import os
 import sys
+import json
 import logging
 import asyncio
 from typing import Dict, List, Optional, Any
@@ -17,6 +18,7 @@ from bot import OneDriveBot
 from database import db_manager
 from aiohttp import web
 from aiohttp.web_request import Request
+import aiohttp
 
 # Load environment variables
 load_dotenv()
@@ -64,6 +66,13 @@ class OneDriveBotRender(OneDriveBot):
         # Keep-alive mechanism for long-running operations
         self.keepalive_enabled = True
         self.last_activity = datetime.now(timezone.utc)
+        
+        # Check Git integration availability
+        try:
+            from git_integration import git_manager
+            self.git_available = True
+        except ImportError:
+            self.git_available = False
         
         logger.info(f"Render Bot initialized - Port: {self.port}")
         logger.info(f"Webhook URL: {self.webhook_url}{self.webhook_path}")
@@ -181,7 +190,7 @@ class OneDriveBotRender(OneDriveBot):
             return web.Response(text="Error", status=500)
     
     async def health_check(self, request: Request) -> web.Response:
-        """Health check endpoint for Render with activity tracking"""
+        """Enhanced health check endpoint for Render with comprehensive monitoring"""
         try:
             # Check if bot is properly initialized
             if not self.application or not self.application.bot:
@@ -191,44 +200,266 @@ class OneDriveBotRender(OneDriveBot):
             if not self.indexer:
                 return web.Response(text="Indexer not available", status=503)
             
-            # Calculate time since last activity
+            # Calculate time since last activity and startup
             now = datetime.now(timezone.utc)
             time_since_activity = (now - self.last_activity).total_seconds()
+            uptime = (now - self.startup_time).total_seconds() if self.startup_time else 0
             
             # Check indexing status
             indexing_status = "idle"
             indexing_progress = 0
+            current_path = ""
+            
             if hasattr(self.indexer, 'is_indexing') and self.indexer.is_indexing:
                 indexing_status = "active"
                 if hasattr(self.indexer, 'indexing_progress') and hasattr(self.indexer, 'indexing_total'):
                     if self.indexer.indexing_total > 0:
                         indexing_progress = int((self.indexer.indexing_progress / self.indexer.indexing_total) * 100)
+                if hasattr(self.indexer, 'indexing_current_path'):
+                    current_path = str(self.indexer.indexing_current_path)
             
-            # Return health status
+            # Get bot info
+            bot_username = "unknown"
+            try:
+                bot_info = await self.application.bot.get_me()
+                bot_username = bot_info.username or bot_info.first_name
+            except:
+                pass
+            
+            # Database status
+            db_status = "enabled" if db_manager and db_manager.enabled else "file_fallback"
+            
+            # Cold start status
+            cold_start_info = {
+                "is_cold_start": getattr(self, 'is_cold_start', False),
+                "pending_updates": len(getattr(self, 'pending_updates', [])),
+                "cold_start_messages": len(getattr(self, 'cold_start_messages', {}))
+            }
+            
+            # Prepare comprehensive health data
             health_data = {
                 "status": "healthy",
-                "bot_username": getattr(self.application.bot, 'username', 'unknown'),
-                "webhook_url": f"{self.webhook_url}{self.webhook_path}",
-                "timestamp": self.startup_time.isoformat() if self.startup_time else None,
-                "uptime_seconds": (now - self.startup_time).total_seconds() if self.startup_time else 0,
-                "indexing_status": indexing_status,
-                "indexing_progress": indexing_progress,
-                "last_activity_seconds_ago": time_since_activity,
-                "current_path": getattr(self.indexer, 'indexing_current_path', '') if indexing_status == "active" else ""
+                "service": "OneDrive Telegram Bot",
+                "timestamp": now.isoformat(),
+                "bot": {
+                    "username": bot_username,
+                    "webhook_url": f"{self.webhook_url}{self.webhook_path}",
+                    "startup_time": self.startup_time.isoformat() if self.startup_time else None,
+                    "uptime_seconds": int(uptime),
+                    "uptime_human": self.format_uptime(uptime)
+                },
+                "activity": {
+                    "last_activity_seconds_ago": int(time_since_activity),
+                    "last_activity_human": self.format_time_ago(time_since_activity),
+                    "status": "active" if time_since_activity < 300 else "idle"  # 5 minutes threshold
+                },
+                "indexing": {
+                    "status": indexing_status,
+                    "progress_percent": indexing_progress,
+                    "current_path": current_path[:100] + "..." if len(current_path) > 100 else current_path
+                },
+                "storage": {
+                    "database_status": db_status,
+                    "git_integration": "enabled" if hasattr(self, 'git_available') and self.git_available else "disabled"
+                },
+                "cold_start": cold_start_info,
+                "render": {
+                    "port": self.port,
+                    "host": self.host,
+                    "keep_alive_enabled": getattr(self, 'keepalive_enabled', False)
+                }
             }
             
             # Update activity timestamp for this health check
             self.last_activity = now
             
-            return web.Response(
-                text=f"OneDrive Telegram Bot is running\n{health_data}",
-                status=200,
-                content_type='text/plain'
-            )
+            # Determine response format based on Accept header
+            accept_header = request.headers.get('Accept', '')
+            
+            if 'application/json' in accept_header:
+                # Return JSON for programmatic access
+                return web.Response(
+                    text=json.dumps(health_data, indent=2),
+                    status=200,
+                    content_type='application/json'
+                )
+            else:
+                # Return human-readable format for browser access
+                status_text = self.format_health_status(health_data)
+                return web.Response(
+                    text=status_text,
+                    status=200,
+                    content_type='text/plain'
+                )
             
         except Exception as e:
             logger.error(f"Health check failed: {e}")
-            return web.Response(text=f"Health check failed: {str(e)}", status=503)
+            import traceback
+            error_details = traceback.format_exc()
+            
+            error_response = {
+                "status": "error",
+                "error": str(e),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "details": error_details if os.getenv('DEBUG') == 'true' else None
+            }
+            
+            return web.Response(
+                text=json.dumps(error_response, indent=2),
+                status=503,
+                content_type='application/json'
+            )
+    
+    def format_health_status(self, health_data: dict) -> str:
+        """Format health data as human-readable text"""
+        bot = health_data['bot']
+        activity = health_data['activity']
+        indexing = health_data['indexing']
+        storage = health_data['storage']
+        cold_start = health_data['cold_start']
+        render = health_data['render']
+        
+        status_lines = [
+            "🤖 OneDrive Telegram Bot - Health Status",
+            "=" * 50,
+            "",
+            f"✅ Status: {health_data['status'].upper()}",
+            f"🕐 Timestamp: {health_data['timestamp']}",
+            "",
+            "🤖 Bot Information:",
+            f"  • Username: @{bot['username']}",
+            f"  • Uptime: {bot['uptime_human']}",
+            f"  • Webhook: {bot['webhook_url']}",
+            "",
+            f"⚡ Activity ({activity['status'].upper()}):",
+            f"  • Last activity: {activity['last_activity_human']} ago",
+            "",
+            f"📁 Indexing ({indexing['status'].upper()}):",
+            f"  • Progress: {indexing['progress_percent']}%",
+        ]
+        
+        if indexing['current_path']:
+            status_lines.append(f"  • Current: {indexing['current_path']}")
+        
+        status_lines.extend([
+            "",
+            f"💾 Storage:",
+            f"  • Database: {storage['database_status']}",
+            f"  • Git integration: {storage['git_integration']}",
+            "",
+            f"🚀 Render Configuration:",
+            f"  • Port: {render['port']}",
+            f"  • Host: {render['host']}",
+            f"  • Keep-alive: {'enabled' if render['keep_alive_enabled'] else 'disabled'}",
+        ])
+        
+        if cold_start['is_cold_start'] or cold_start['pending_updates'] > 0:
+            status_lines.extend([
+                "",
+                f"❄️  Cold Start Status:",
+                f"  • Cold start active: {'Yes' if cold_start['is_cold_start'] else 'No'}",
+                f"  • Pending updates: {cold_start['pending_updates']}",
+                f"  • Cold start messages: {cold_start['cold_start_messages']}",
+            ])
+        
+        status_lines.extend([
+            "",
+            "=" * 50,
+            "For JSON format, set Accept: application/json header"
+        ])
+        
+        return "\n".join(status_lines)
+    
+    def format_uptime(self, seconds: float) -> str:
+        """Format uptime in human-readable format"""
+        if seconds < 60:
+            return f"{int(seconds)}s"
+        elif seconds < 3600:
+            return f"{int(seconds//60)}m {int(seconds%60)}s"
+        elif seconds < 86400:
+            hours = int(seconds // 3600)
+            minutes = int((seconds % 3600) // 60)
+            return f"{hours}h {minutes}m"
+        else:
+            days = int(seconds // 86400)
+            hours = int((seconds % 86400) // 3600)
+            return f"{days}d {hours}h"
+    
+    def format_time_ago(self, seconds: float) -> str:
+        """Format time ago in human-readable format"""
+        if seconds < 60:
+            return f"{int(seconds)} seconds"
+        elif seconds < 3600:
+            return f"{int(seconds//60)} minutes"
+        elif seconds < 86400:
+            return f"{int(seconds//3600)} hours"
+        else:
+            return f"{int(seconds//86400)} days"
+    
+    async def ping_handler(self, request: Request) -> web.Response:
+        """Simple ping endpoint for external monitoring services"""
+        try:
+            self.last_activity = datetime.now(timezone.utc)
+            return web.Response(text="pong", status=200)
+        except Exception as e:
+            logger.error(f"Ping handler failed: {e}")
+            return web.Response(text="error", status=500)
+    
+    async def metrics_handler(self, request: Request) -> web.Response:
+        """Metrics endpoint for monitoring (Prometheus-style format)"""
+        try:
+            now = datetime.now(timezone.utc)
+            uptime = (now - self.startup_time).total_seconds() if self.startup_time else 0
+            time_since_activity = (now - self.last_activity).total_seconds()
+            
+            # Basic metrics in Prometheus format
+            metrics = [
+                f"# HELP bot_uptime_seconds Total uptime of the bot in seconds",
+                f"# TYPE bot_uptime_seconds counter",
+                f"bot_uptime_seconds {uptime}",
+                "",
+                f"# HELP bot_last_activity_seconds Time since last activity in seconds",
+                f"# TYPE bot_last_activity_seconds gauge", 
+                f"bot_last_activity_seconds {time_since_activity}",
+                "",
+                f"# HELP bot_status Bot status (1 = healthy, 0 = unhealthy)",
+                f"# TYPE bot_status gauge",
+                f"bot_status 1",
+                "",
+            ]
+            
+            # Add indexing metrics if available
+            if hasattr(self.indexer, 'is_indexing'):
+                is_indexing = 1 if self.indexer.is_indexing else 0
+                metrics.extend([
+                    f"# HELP bot_indexing_active Whether indexing is currently active (1 = yes, 0 = no)",
+                    f"# TYPE bot_indexing_active gauge",
+                    f"bot_indexing_active {is_indexing}",
+                    "",
+                ])
+                
+                if hasattr(self.indexer, 'indexing_progress') and hasattr(self.indexer, 'indexing_total'):
+                    if self.indexer.indexing_total > 0:
+                        progress = self.indexer.indexing_progress / self.indexer.indexing_total
+                        metrics.extend([
+                            f"# HELP bot_indexing_progress Progress of current indexing operation (0.0 to 1.0)",
+                            f"# TYPE bot_indexing_progress gauge",
+                            f"bot_indexing_progress {progress:.4f}",
+                            "",
+                        ])
+            
+            # Update activity for this request
+            self.last_activity = now
+            
+            return web.Response(
+                text="\n".join(metrics),
+                status=200,
+                content_type='text/plain; version=0.0.4; charset=utf-8'
+            )
+            
+        except Exception as e:
+            logger.error(f"Metrics handler failed: {e}")
+            return web.Response(text="# Metrics unavailable\n", status=500)
     
     async def root_handler(self, request: Request) -> web.Response:
         """Root endpoint handler"""
@@ -239,14 +470,16 @@ class OneDriveBotRender(OneDriveBot):
         )
     
     def create_web_app(self):
-        """Create aiohttp web application for Render"""
+        """Create aiohttp web application for Render with enhanced endpoints"""
         app = web.Application()
         
         # Add webhook endpoint
         app.router.add_post(self.webhook_path, self.webhook_handler)
         
-        # Add health check endpoint (required by Render)
+        # Add monitoring endpoints
         app.router.add_get('/health', self.health_check)
+        app.router.add_get('/ping', self.ping_handler)
+        app.router.add_get('/metrics', self.metrics_handler)
         
         # Add root endpoint
         app.router.add_get('/', self.root_handler)
@@ -698,25 +931,77 @@ class OneDriveBotRender(OneDriveBot):
             logger.warning(f"Error sending keep-alive ping: {e}")
 
     def start_keepalive_task(self):
-        """Start background task to send periodic keep-alive signals during indexing"""
+        """Start background task to send periodic keep-alive signals to prevent Render sleep"""
         async def keepalive_loop():
             while self.keepalive_enabled:
                 try:
+                    # Send keep-alive ping
+                    await self.send_keepalive_ping()
+                    
+                    # Self-ping the health endpoint to keep service active
+                    await self.self_ping_health_endpoint()
+                    
                     # Check if indexing is in progress
                     if hasattr(self.indexer, 'is_indexing') and self.indexer.is_indexing:
-                        await self.send_keepalive_ping()
-                        # Sleep for 30 seconds during active indexing
+                        # Sleep for 30 seconds during active indexing (more frequent pings)
                         await asyncio.sleep(30)
                     else:
-                        # Sleep for 5 minutes when not indexing
-                        await asyncio.sleep(300)
+                        # Sleep for 10 minutes during idle time (Render sleeps after 15 mins)
+                        await asyncio.sleep(600)
+                        
                 except Exception as e:
                     logger.warning(f"Error in keep-alive loop: {e}")
                     await asyncio.sleep(60)  # Wait a minute before retrying
         
         # Start the keep-alive task
         asyncio.create_task(keepalive_loop())
-        logger.info("Keep-alive task started")
+        logger.info("Keep-alive task started - will ping every 10 minutes to prevent sleep")
+    
+    async def self_ping_health_endpoint(self):
+        """Self-ping the health endpoint to maintain activity and prevent sleep"""
+        try:
+            if not self.webhook_url:
+                return
+                
+            health_url = f"{self.webhook_url}/health"
+            
+            # Use aiohttp for async HTTP request
+            timeout = aiohttp.ClientTimeout(total=10)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(health_url) as response:
+                    if response.status == 200:
+                        logger.debug(f"Self-ping successful: {health_url}")
+                        # Update last activity time
+                        self.last_activity = datetime.now(timezone.utc)
+                    else:
+                        logger.warning(f"Self-ping failed with status {response.status}: {health_url}")
+                        
+        except asyncio.TimeoutError:
+            logger.warning("Self-ping timeout - health endpoint took too long to respond")
+        except Exception as e:
+            logger.debug(f"Self-ping error (this is normal during startup): {e}")
+    
+    async def external_keepalive_ping(self):
+        """Send external ping to keep the service alive (for critical operations)"""
+        try:
+            # This could ping external monitoring services or uptime checkers
+            # For now, we'll just log and update activity
+            self.last_activity = datetime.now(timezone.utc)
+            logger.debug("External keep-alive ping completed")
+            
+            # If we have a custom uptime monitoring URL, ping it here
+            uptime_url = os.getenv('UPTIME_MONITOR_URL')
+            if uptime_url:
+                try:
+                    timeout = aiohttp.ClientTimeout(total=5)
+                    async with aiohttp.ClientSession(timeout=timeout) as session:
+                        async with session.get(uptime_url) as response:
+                            logger.debug(f"Pinged external monitor: {response.status}")
+                except Exception as e:
+                    logger.debug(f"External monitor ping failed: {e}")
+                    
+        except Exception as e:
+            logger.warning(f"Error in external keep-alive ping: {e}")
     
 
 # =============================================================================
